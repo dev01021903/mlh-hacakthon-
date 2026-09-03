@@ -19,7 +19,7 @@ AMRIT is built with a modern, decoupled architecture:
 
 ## 🚀 Live Links
 - **Frontend (GitHub Pages)**: [https://dev01021903.github.io/mlh-hacakthon-/](https://dev01021903.github.io/mlh-hacakthon-/)
-- **Backend**: Currently configured for local development (`http://localhost:8000`). To make the app fully live, deploy the `backend/` folder to Render or Railway and update `src/services/triageService.ts` with the new URL.
+- **Backend**: Currently configured for local development (`http://localhost:8001`). To make the app fully live, deploy the `backend/` folder to Render or Railway and update `src/services/triageService.ts` with the new URL.
 
 ---
 
@@ -45,8 +45,8 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env and add your GEMINI_API_KEY!
 
-# Run the FastAPI server (Starts on http://localhost:8000)
-python main.py
+# Run the FastAPI server (Starts on http://localhost:8001)
+python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 ### 2. Start the Frontend

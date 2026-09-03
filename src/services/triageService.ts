@@ -7,7 +7,7 @@
 import { SymptomFormData, TriageResult, UrgencyLevel, PossibleConcern, ImageContextData, DocumentContextData } from '../types';
 import { RED_FLAG_SYMPTOMS } from '../data/mockData';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'http://localhost:8001';
 
 export async function evaluateSymptoms(data: SymptomFormData): Promise<TriageResult> {
   const languageNames: Record<string, string> = {
