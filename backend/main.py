@@ -13,7 +13,7 @@ from models.schemas import (
 )
 from services.triage_service import process_symptom_triage
 from services.storage_service import upload_file_to_storage, is_storage_configured
-from services.gemini_service import test_gemini_connection
+from services.gemini_service import test_gemini_connection, test_gemini_connection_details
 
 # Load environment variables from backend/.env if present
 load_dotenv()
@@ -56,9 +56,18 @@ async def health_check():
 async def gemini_diagnostics_endpoint():
     """
     Local-development-only Gemini connection diagnostic test.
-    Makes a single minimal request to verify connectivity and API key validity.
+    Makes a single minimal request with exponential backoff for transient issues.
     """
     status_code, response_data = test_gemini_connection()
+    return JSONResponse(status_code=status_code, content=response_data)
+
+@app.get("/api/diagnostics/gemini-details")
+async def gemini_diagnostics_details_endpoint():
+    """
+    Local-development-only detailed Gemini diagnostic test.
+    Returns structured error categories, model availability, and fallback testing.
+    """
+    status_code, response_data = test_gemini_connection_details()
     return JSONResponse(status_code=status_code, content=response_data)
 
 @app.post("/api/analyze-symptoms", response_model=TriageAnalysisResponse)

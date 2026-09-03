@@ -23,7 +23,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Insert your GEMINI_API_KEY into backend/.env
+# Configure GEMINI_API_KEY, GEMINI_MODEL_PRIMARY, and GEMINI_MODEL_FALLBACK in backend/.env
 python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
@@ -39,8 +39,8 @@ npm run dev
 ## 🔍 Verify Gemini Connection
 
 1. Start FastAPI backend (`uvicorn main:app --host 127.0.0.1 --port 8000`).
-2. Open [`http://127.0.0.1:8000/api/diagnostics/gemini`](http://127.0.0.1:8000/api/diagnostics/gemini) or use the bottom-left **Developer test** panel in the local frontend UI.
-3. Confirm `reachable: true` and `configured: true`.
+2. Open [`http://127.0.0.1:8000/api/diagnostics/gemini-details`](http://127.0.0.1:8000/api/diagnostics/gemini-details) or use the **Developer test** drawer in the bottom-left corner of the frontend UI.
+3. If `permission_denied` is reported, enable the **Generative Language API** (`generativelanguage.googleapis.com`) on your Google Cloud Console / Google AI Studio project.
 4. Never share the actual API key.
 
 ---

@@ -1,40 +1,63 @@
 import React, { useState } from 'react';
-import { CheckCircle2, XCircle, RefreshCw, ChevronUp, ChevronDown, Wrench } from 'lucide-react';
+import { CheckCircle2, XCircle, RefreshCw, ChevronUp, ChevronDown, Wrench, Info } from 'lucide-react';
 
 interface DiagnosticResponse {
   configured: boolean;
   model?: string;
-  reachable: boolean;
+  configured_model?: string;
+  reachable?: boolean;
+  model_check_passed?: boolean;
+  model_used?: string;
+  fallback_model?: string;
+  error_category?: string | null;
+  retryable?: boolean;
   response_received?: boolean;
-  message: string;
+  message?: string;
+  safe_message?: string;
 }
 
 export const DevDiagnosticsPanel: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [diagnosticResult, setDiagnosticResult] = useState<DiagnosticResponse | null>(null);
+  const [detailedMode, setDetailedMode] = useState(false);
 
   // Only show in development mode
   if (typeof import.meta !== 'undefined' && import.meta.env && !import.meta.env.DEV) {
     return null;
   }
 
-  const handleTestConnection = async () => {
+  const handleTestConnection = async (detailed: boolean = false) => {
     setIsLoading(true);
+    setDetailedMode(detailed);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/diagnostics/gemini');
+      const endpoint = detailed
+        ? 'http://127.0.0.1:8000/api/diagnostics/gemini-details'
+        : 'http://127.0.0.1:8000/api/diagnostics/gemini';
+      const res = await fetch(endpoint);
       const data: DiagnosticResponse = await res.json();
       setDiagnosticResult(data);
     } catch (err) {
       setDiagnosticResult({
         configured: false,
         reachable: false,
-        message: 'Could not connect to the local FastAPI backend (is it running on port 8000?).',
+        message: 'Could not connect to local FastAPI backend (is it running on port 8000?).',
+        safe_message: 'Could not connect to local FastAPI backend (is it running on port 8000?).',
       });
     } finally {
       setIsLoading(false);
     }
   };
+
+  const isConnected = Boolean(
+    diagnosticResult?.reachable || diagnosticResult?.model_check_passed
+  );
+
+  const displayMessage =
+    diagnosticResult?.safe_message || diagnosticResult?.message || '';
+
+  const activeModel =
+    diagnosticResult?.configured_model || diagnosticResult?.model || 'gemini-2.0-flash';
 
   return (
     <div className="fixed bottom-4 left-4 z-50">
@@ -59,7 +82,7 @@ export const DevDiagnosticsPanel: React.FC = () => {
               <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[10px] font-extrabold uppercase tracking-wider">
                 Developer Only
               </span>
-              <h4 className="text-xs font-bold text-amrit-navy">Gemini Test Tool</h4>
+              <h4 className="text-xs font-bold text-amrit-navy">Gemini Diagnostics</h4>
             </div>
             <button
               onClick={() => setIsOpen(false)}
@@ -70,31 +93,43 @@ export const DevDiagnosticsPanel: React.FC = () => {
           </div>
 
           <p className="text-xs text-amrit-muted leading-relaxed font-medium">
-            Test the live backend Gemini connection without exposing secrets to the browser.
+            Test the live backend Gemini connection and verify model availability without exposing secrets to the browser.
           </p>
 
-          <button
-            type="button"
-            onClick={handleTestConnection}
-            disabled={isLoading}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-amrit-teal hover:bg-amrit-tealDark text-white text-xs font-bold rounded-xl shadow-soft transition-all disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>{isLoading ? 'Testing connection...' : 'Test Gemini connection'}</span>
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => handleTestConnection(false)}
+              disabled={isLoading}
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-amrit-teal hover:bg-amrit-tealDark text-white text-xs font-bold rounded-xl shadow-soft transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading && !detailedMode ? 'animate-spin' : ''}`} />
+              <span>Quick check</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleTestConnection(true)}
+              disabled={isLoading}
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-white hover:bg-amrit-bg text-amrit-navy border border-amrit-border text-xs font-bold rounded-xl shadow-soft transition-all disabled:opacity-50"
+            >
+              <Info className="w-3.5 h-3.5 text-amrit-teal" />
+              <span>Deep verify</span>
+            </button>
+          </div>
 
           {/* Results Display */}
           {diagnosticResult && (
             <div
               className={`p-3.5 rounded-xl border space-y-2 text-xs transition-all ${
-                diagnosticResult.reachable
+                isConnected
                   ? 'bg-amrit-safeLight/70 border-amrit-safe/40 text-amrit-navy'
                   : 'bg-amrit-emergencyLight/70 border-amrit-emergency/40 text-amrit-navy'
               }`}
             >
               <div className="flex items-center justify-between">
                 <span className="font-bold flex items-center gap-1.5">
-                  {diagnosticResult.reachable ? (
+                  {isConnected ? (
                     <>
                       <CheckCircle2 className="w-4 h-4 text-amrit-safe" />
                       <span className="text-amrit-safe font-extrabold">Gemini connected</span>
@@ -106,20 +141,31 @@ export const DevDiagnosticsPanel: React.FC = () => {
                     </>
                   )}
                 </span>
-                {diagnosticResult.model && (
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/80 border border-current/20">
-                    Model: {diagnosticResult.model}
-                  </span>
-                )}
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/80 border border-current/20">
+                  Model: {activeModel}
+                </span>
               </div>
 
               <p className="text-xs font-medium leading-snug">
-                {diagnosticResult.message}
+                {displayMessage}
               </p>
+
+              {diagnosticResult.error_category && (
+                <div className="p-2 rounded-lg bg-white/80 border border-rose-200 text-[11px] font-semibold text-rose-900">
+                  <span>Error Category: </span>
+                  <code className="font-mono bg-rose-100 px-1 py-0.5 rounded">{diagnosticResult.error_category}</code>
+                </div>
+              )}
+
+              {diagnosticResult.model_used === 'fallback' && (
+                <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] font-semibold text-amber-900">
+                  <span>Using fallback model: {diagnosticResult.fallback_model}</span>
+                </div>
+              )}
 
               <div className="text-[10px] text-amrit-muted pt-1 border-t border-current/10 flex justify-between">
                 <span>Configured: {diagnosticResult.configured ? 'Yes' : 'No'}</span>
-                <span>Reachable: {diagnosticResult.reachable ? 'Yes' : 'No'}</span>
+                <span>Retryable: {diagnosticResult.retryable ? 'Yes' : 'No'}</span>
               </div>
             </div>
           )}

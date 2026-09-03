@@ -1,6 +1,7 @@
 import os
 import json
 import io
+import time
 from typing import Optional, List, Dict, Any, Tuple
 from dotenv import load_dotenv
 
@@ -106,6 +107,111 @@ def extract_pdf_text_in_memory(pdf_bytes: bytes) -> str:
         print(f"[GeminiService] PDF extraction note: {e}")
         return ""
 
+def classify_gemini_error(error: Exception) -> Tuple[str, bool, str]:
+    """
+    Classifies errors from Gemini SDK into strict, safe categories.
+    Returns: (error_category, retryable, safe_message)
+    Never exposes API keys, auth headers, or raw request/response bodies.
+    """
+    err_str = str(error).lower()
+    err_type = type(error).__name__.lower()
+
+    if "api_key" in err_str and ("missing" in err_str or "not set" in err_str):
+        return (
+            "missing_key",
+            False,
+            "Gemini API key is missing from backend configuration.",
+        )
+
+    if "401" in err_str or "unauthenticated" in err_str or "api_key_invalid" in err_str or "invalid api key" in err_str:
+        return (
+            "invalid_key",
+            False,
+            "Gemini API key is invalid or unrecognized. Please check your API key in backend/.env.",
+        )
+
+    if "403" in err_str or "permission_denied" in err_str or "service_disabled" in err_str or "not been used in project" in err_str:
+        return (
+            "permission_denied",
+            False,
+            "Gemini API (generativelanguage.googleapis.com) is disabled for this project or restricted. Enable it in Google Cloud Console / AI Studio.",
+        )
+
+    if "404" in err_str or "not found" in err_str or "is not supported" in err_str or "model" in err_str and "unavailable" in err_str:
+        return (
+            "model_unavailable",
+            False,
+            "The configured Gemini model is unavailable or incorrectly configured for this API key.",
+        )
+
+    if "429" in err_str or "resource_exhausted" in err_str or "quota" in err_str or "rate limit" in err_str:
+        return (
+            "quota_exceeded",
+            False,
+            "Gemini API quota or rate limit exceeded. Check your plan or quota limits in Google AI Studio / GCP.",
+        )
+
+    if "503" in err_str or "unavailable" in err_str or "service unavailable" in err_str or "500" in err_str:
+        return (
+            "service_unavailable",
+            True,
+            "Gemini service is temporarily unavailable. A retry may succeed shortly.",
+        )
+
+    if "timeout" in err_str or "connection" in err_str or "network" in err_str or "dns" in err_str or "httpx" in err_type:
+        return (
+            "network_error",
+            True,
+            "Network connection error while reaching Gemini API endpoints.",
+        )
+
+    if "400" in err_str or "invalid_argument" in err_str:
+        return (
+            "invalid_request",
+            False,
+            "Invalid request parameters sent to Gemini API.",
+        )
+
+    return (
+        "service_unavailable",
+        True,
+        "Gemini could not be reached. Check API key, API restrictions, model access, quota, and network connection.",
+    )
+
+def _execute_genai_call(api_key: str, model_name: str, contents: Any, system_instruction: Optional[str] = None, json_mode: bool = True) -> Optional[str]:
+    """Helper executing content generation via modern or legacy SDK."""
+    # 1. Modern SDK
+    if GENAI_CLIENT_AVAILABLE:
+        client = genai.Client(api_key=api_key)
+        config = None
+        if system_instruction or json_mode:
+            config = genai_types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.1,
+                response_mime_type="application/json" if json_mode else "text/plain",
+            )
+        response = client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=config,
+        )
+        if response and response.text:
+            return response.text
+
+    # 2. Legacy SDK Fallback
+    if LEGACY_GENAI_AVAILABLE:
+        legacy_genai.configure(api_key=api_key)
+        gen_model = legacy_genai.GenerativeModel(
+            model_name,
+            system_instruction=system_instruction,
+            generation_config={"temperature": 0.1, "response_mime_type": "application/json" if json_mode else "text/plain"} if json_mode else None,
+        )
+        resp = gen_model.generate_content(contents)
+        if resp and resp.text:
+            return resp.text
+
+    return None
+
 def analyze_with_gemini(
     symptom_text: str,
     language: str,
@@ -118,6 +224,7 @@ def analyze_with_gemini(
 ) -> Optional[Dict[str, Any]]:
     """
     Sends structured triage request with optional image and PDF context to Gemini.
+    Supports primary model with configurable fallback.
     """
     load_dotenv(override=True)
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -125,7 +232,8 @@ def analyze_with_gemini(
         print("[GeminiService] GEMINI_API_KEY is not configured in backend/.env.")
         return None
 
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    primary_model = os.environ.get("GEMINI_MODEL_PRIMARY") or os.environ.get("GEMINI_MODEL") or "gemini-2.0-flash"
+    fallback_model = os.environ.get("GEMINI_MODEL_FALLBACK") or "gemini-1.5-flash"
 
     # Prepare PDF context if supplied
     pdf_text_context = ""
@@ -149,82 +257,49 @@ def analyze_with_gemini(
     {JSON_SCHEMA_INSTRUCTION}
     """
 
-    # 1. Try google-genai modern SDK
-    if GENAI_CLIENT_AVAILABLE:
-        try:
-            client = genai.Client(api_key=api_key)
-            contents: List[Any] = []
+    models_to_try = [primary_model]
+    if fallback_model and fallback_model != primary_model:
+        models_to_try.append(fallback_model)
 
-            if image_bytes and image_content_type:
+    for model_name in models_to_try:
+        try:
+            contents: List[Any] = []
+            if image_bytes and image_content_type and GENAI_CLIENT_AVAILABLE:
                 contents.append(
                     genai_types.Part.from_bytes(
                         data=image_bytes,
                         mime_type=image_content_type,
                     )
                 )
+            elif image_bytes and image_content_type:
+                contents.append({"mime_type": image_content_type, "data": image_bytes})
 
             contents.append(prompt_text)
 
-            config = genai_types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                temperature=0.1,
-                response_mime_type="application/json",
-            )
-
-            response = client.models.generate_content(
-                model=model_name,
+            res_text = _execute_genai_call(
+                api_key=api_key,
+                model_name=model_name,
                 contents=contents,
-                config=config,
+                system_instruction=SYSTEM_INSTRUCTION,
+                json_mode=True,
             )
-
-            if response and response.text:
-                return json.loads(response.text)
+            if res_text:
+                return json.loads(res_text)
         except Exception as e:
-            print(f"[GeminiService] google.genai error with model {model_name}: {e}")
-
-    # 2. Try legacy google.generativeai SDK fallback
-    if LEGACY_GENAI_AVAILABLE:
-        try:
-            legacy_genai.configure(api_key=api_key)
-            for m in [model_name, "gemini-1.5-flash"]:
-                try:
-                    gen_model = legacy_genai.GenerativeModel(
-                        m,
-                        system_instruction=SYSTEM_INSTRUCTION,
-                        generation_config={
-                            "temperature": 0.1,
-                            "response_mime_type": "application/json",
-                        },
-                    )
-
-                    content_parts: List[Any] = []
-                    if image_bytes and image_content_type:
-                        content_parts.append({
-                            "mime_type": image_content_type,
-                            "data": image_bytes,
-                        })
-                    content_parts.append(prompt_text)
-
-                    resp = gen_model.generate_content(content_parts)
-                    if resp and resp.text:
-                        return json.loads(resp.text)
-                except Exception as inner_e:
-                    print(f"[GeminiService] legacy model {m} attempt: {inner_e}")
-                    continue
-        except Exception as e:
-            print(f"[GeminiService] legacy google.generativeai error: {e}")
+            cat, _, _ = classify_gemini_error(e)
+            print(f"[GeminiService] Model {model_name} failed with category: {cat}")
+            continue
 
     return None
 
 def test_gemini_connection() -> Tuple[int, Dict[str, Any]]:
     """
-    Local-development-only Gemini connection test.
-    Makes one minimal request to verify connectivity and API key validity.
-    Returns (status_code, safe_response_dict).
+    Standard GET /api/diagnostics/gemini endpoint implementation.
+    Includes exponential backoff retry for transient 503/network errors.
     """
     load_dotenv(override=True)
     api_key = os.environ.get("GEMINI_API_KEY")
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    primary_model = os.environ.get("GEMINI_MODEL_PRIMARY") or os.environ.get("GEMINI_MODEL") or "gemini-2.0-flash"
 
     if not api_key or not api_key.strip():
         print("Gemini diagnostic failed: missing_key")
@@ -237,62 +312,129 @@ def test_gemini_connection() -> Tuple[int, Dict[str, Any]]:
     print("Gemini diagnostic started")
     test_prompt = "Reply with exactly: GEMINI_CONNECTION_OK"
 
-    # 1. Try google.genai client
-    if GENAI_CLIENT_AVAILABLE:
+    backoff_delays = [1.0, 2.0, 4.0]
+    last_error_category = "service_unavailable"
+    last_safe_message = "Gemini could not be reached. Check API key, API restrictions, model access, quota, and network connection."
+
+    for attempt, delay in enumerate(backoff_delays, start=1):
         try:
-            client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model=model_name,
+            res_text = _execute_genai_call(
+                api_key=api_key,
+                model_name=primary_model,
                 contents=test_prompt,
+                json_mode=False,
             )
-            if response and response.text:
+            if res_text:
                 print("Gemini diagnostic succeeded")
                 return 200, {
                     "configured": True,
-                    "model": model_name,
+                    "model": primary_model,
                     "reachable": True,
                     "response_received": True,
                     "message": "Gemini connection is working.",
                 }
         except Exception as e:
-            err_str = str(e).lower()
-            if "not found" in err_str or "404" in err_str or "is not supported" in err_str:
-                print("Gemini diagnostic failed: model_unavailable")
+            cat, retryable, msg = classify_gemini_error(e)
+            last_error_category = cat
+            last_safe_message = msg
+
+            if not retryable:
+                print(f"Gemini diagnostic failed: {cat}")
                 return 503, {
                     "configured": True,
                     "reachable": False,
-                    "message": "Gemini model is unavailable or incorrectly configured.",
+                    "message": msg,
                 }
-            print("Gemini diagnostic failed: authentication_or_quota")
 
-    # 2. Try legacy SDK fallback
-    if LEGACY_GENAI_AVAILABLE:
-        try:
-            legacy_genai.configure(api_key=api_key)
-            gen_model = legacy_genai.GenerativeModel(model_name)
-            resp = gen_model.generate_content(test_prompt)
-            if resp and resp.text:
-                print("Gemini diagnostic succeeded")
-                return 200, {
-                    "configured": True,
-                    "model": model_name,
-                    "reachable": True,
-                    "response_received": True,
-                    "message": "Gemini connection is working.",
-                }
-        except Exception as e:
-            err_str = str(e).lower()
-            if "not found" in err_str or "404" in err_str or "is not supported" in err_str:
-                print("Gemini diagnostic failed: model_unavailable")
-                return 503, {
-                    "configured": True,
-                    "reachable": False,
-                    "message": "Gemini model is unavailable or incorrectly configured.",
-                }
-            print("Gemini diagnostic failed: authentication_or_quota")
+            print(f"Gemini diagnostic retry {attempt}/3 after delay {delay}s due to: {cat}")
+            if attempt < len(backoff_delays):
+                time.sleep(delay)
 
+    print(f"Gemini diagnostic failed: {last_error_category}")
     return 503, {
         "configured": True,
         "reachable": False,
-        "message": "Gemini could not be reached. Check API key, API restrictions, model access, quota, and network connection.",
+        "message": last_safe_message,
+    }
+
+def test_gemini_connection_details() -> Tuple[int, Dict[str, Any]]:
+    """
+    Detailed GET /api/diagnostics/gemini-details endpoint implementation.
+    Tests primary model and fallback model, distinguishing detailed error categories.
+    """
+    load_dotenv(override=True)
+    api_key = os.environ.get("GEMINI_API_KEY")
+    primary_model = os.environ.get("GEMINI_MODEL_PRIMARY") or os.environ.get("GEMINI_MODEL") or "gemini-2.0-flash"
+    fallback_model = os.environ.get("GEMINI_MODEL_FALLBACK") or "gemini-1.5-flash"
+
+    if not api_key or not api_key.strip():
+        return 503, {
+            "configured": False,
+            "configured_model": primary_model,
+            "model_check_passed": False,
+            "error_category": "missing_key",
+            "retryable": False,
+            "safe_message": "Gemini API key is missing from backend configuration.",
+        }
+
+    test_prompt = "Reply with exactly: GEMINI_CONNECTION_OK"
+
+    # Attempt Primary Model
+    try:
+        res = _execute_genai_call(api_key=api_key, model_name=primary_model, contents=test_prompt, json_mode=False)
+        if res:
+            return 200, {
+                "configured": True,
+                "configured_model": primary_model,
+                "model_check_passed": True,
+                "model_used": "primary",
+                "error_category": None,
+                "retryable": False,
+                "safe_message": "Gemini connection and model check succeeded with primary model.",
+            }
+    except Exception as e_primary:
+        cat_primary, retryable_primary, msg_primary = classify_gemini_error(e_primary)
+
+        # If primary model is unavailable or permissions issue on model, attempt fallback model
+        if fallback_model and fallback_model != primary_model and cat_primary in ["model_unavailable", "service_unavailable"]:
+            try:
+                res_fallback = _execute_genai_call(api_key=api_key, model_name=fallback_model, contents=test_prompt, json_mode=False)
+                if res_fallback:
+                    return 200, {
+                        "configured": True,
+                        "configured_model": primary_model,
+                        "model_check_passed": True,
+                        "model_used": "fallback",
+                        "fallback_model": fallback_model,
+                        "error_category": None,
+                        "retryable": False,
+                        "safe_message": f"Primary model was unavailable; successfully connected using fallback model ({fallback_model}).",
+                    }
+            except Exception as e_fallback:
+                cat_fb, retryable_fb, msg_fb = classify_gemini_error(e_fallback)
+                return 503, {
+                    "configured": True,
+                    "configured_model": primary_model,
+                    "model_check_passed": False,
+                    "error_category": cat_fb,
+                    "retryable": retryable_fb,
+                    "safe_message": msg_fb,
+                }
+
+        return 503, {
+            "configured": True,
+            "configured_model": primary_model,
+            "model_check_passed": False,
+            "error_category": cat_primary,
+            "retryable": retryable_primary,
+            "safe_message": msg_primary,
+        }
+
+    return 503, {
+        "configured": True,
+        "configured_model": primary_model,
+        "model_check_passed": False,
+        "error_category": "service_unavailable",
+        "retryable": True,
+        "safe_message": "Gemini service could not be reached.",
     }
