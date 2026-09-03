@@ -1,52 +1,69 @@
-# AMRIT (अमृत) — Healthcare Triage Web App
+<div align="center">
+  <img src="public/logo.jpg" alt="AMRIT Logo" width="120" />
+  <h1>AMRIT (अमृत)</h1>
+  <p><em>Your multilingual guide to the next safe health step.</em></p>
+  <p>
+    <a href="https://dev01021903.github.io/mlh-hacakthon-/"><strong>View Live Frontend Demo</strong></a>
+  </p>
+</div>
 
-> **Tagline:** *“Your multilingual guide to the next safe health step.”*  
-> **Mandatory Disclaimer:** *“Amrit provides general triage guidance only. It does not diagnose conditions, prescribe medicines, or replace a qualified healthcare professional.”*
-
----
-
-## 🔒 Security & Privacy
-
-- **No Hardcoded Keys**: The Gemini API key is kept server-side only in `backend/.env`.
-- **No Client Exposure**: Never place `GEMINI_API_KEY` in `VITE_` variables or React code.
-- **Ephemeral Processing**: User images and PDF documents are analyzed in memory and cleaned up immediately.
+> **Mandatory Disclaimer:** *Amrit provides general triage guidance only. It does not diagnose conditions, prescribe medicines, or replace a qualified healthcare professional.*
 
 ---
 
-## 🚀 Quick Start
+## 🏗 Project Architecture
 
-### 1. Backend Setup
+AMRIT is built with a modern, decoupled architecture:
+- **Frontend (`/src`)**: React + TypeScript + Vite + Tailwind CSS. Designed to be mobile-first and highly responsive.
+- **Backend (`/backend`)**: Python + FastAPI. Handles AI integration, secure prompt generation, and strict health and safety guardrails.
+
+## 🚀 Live Links
+- **Frontend (GitHub Pages)**: [https://dev01021903.github.io/mlh-hacakthon-/](https://dev01021903.github.io/mlh-hacakthon-/)
+- **Backend**: Currently configured for local development (`http://localhost:8000`). To make the app fully live, deploy the `backend/` folder to Render or Railway and update `src/services/triageService.ts` with the new URL.
+
+---
+
+## 🛠 Local Setup Instructions
+
+Follow these instructions to run the entire stack on your local machine.
+
+### 1. Start the Backend
+The backend requires a Google Gemini API key to evaluate symptoms and generate localized advice.
+
 ```bash
-# In backend directory
+# Navigate to the backend directory
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
+
+# Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Setup Environment Variables
 cp .env.example .env
-# Configure GEMINI_API_KEY, GEMINI_MODEL_PRIMARY, and GEMINI_MODEL_FALLBACK in backend/.env
-python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+# Edit .env and add your GEMINI_API_KEY!
+
+# Run the FastAPI server (Starts on http://localhost:8000)
+python main.py
 ```
 
-### 2. Frontend Setup
+### 2. Start the Frontend
+In a new terminal window, start the React development server:
+
 ```bash
-# In project root
+# Ensure you are in the root directory (not backend/)
 npm install
+
+# Start the Vite development server (Starts on http://localhost:5175)
 npm run dev
 ```
 
 ---
 
-## 🔍 Verify Gemini Connection
+## 🔒 Security & Privacy Features
 
-1. Start FastAPI backend (`uvicorn main:app --host 127.0.0.1 --port 8000`).
-2. Open [`http://127.0.0.1:8000/api/diagnostics/gemini-details`](http://127.0.0.1:8000/api/diagnostics/gemini-details) or use the **Developer test** drawer in the bottom-left corner of the frontend UI.
-3. If `permission_denied` is reported, enable the **Generative Language API** (`generativelanguage.googleapis.com`) on your Google Cloud Console / Google AI Studio project.
-4. Never share the actual API key.
-
----
-
-## 🩺 System Features
-- **Deterministic Emergency Override**: Urgent symptoms immediately trigger `EMERGENCY_NOW` directing users to **112 / 108**.
-- **Non-Diagnostic Concern Categories**: Broad topics with mandatory uncertainty notes (*"Cannot be confirmed from this information alone."*).
-- **Multimodal Visual & Document Context**: Contextual image and PDF summarization without diagnostic claims.
-- **Safe Medicine Guide**: Pharmacist discussion aid strictly limited to eligible adult self-care cases.
+- **No Hardcoded Keys**: The Gemini API key is kept server-side only in `backend/.env`. Never expose this in the frontend.
+- **Deterministic Emergency Override**: Urgent symptoms bypass the AI and immediately trigger an `EMERGENCY_NOW` alert, directing users to **112 / 108**.
+- **Non-Diagnostic Guardrails**: Strict AI prompts prevent the system from diagnosing conditions or recommending unauthorized medications.
