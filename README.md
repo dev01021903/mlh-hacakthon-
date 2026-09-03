@@ -1,3 +1,3 @@
-# mlm-hackathon
+# mlh-hackathon
 
-MLM Hackathon Project
+MLH Hackathon Project
