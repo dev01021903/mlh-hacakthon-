@@ -7,9 +7,99 @@
 import { SymptomFormData, TriageResult, UrgencyLevel } from '../types';
 import { RED_FLAG_SYMPTOMS } from '../data/mockData';
 
+const API_BASE_URL = 'http://localhost:8000';
+
 export async function evaluateSymptoms(data: SymptomFormData): Promise<TriageResult> {
-  // Simulate network/AI processing delay for realistic UX
-  await new Promise((resolve) => setTimeout(resolve, 2200));
+  // Map duration format for backend model
+  const durationMap: Record<string, string> = {
+    today: 'today',
+    '1_to_3_days': '1-3_days',
+    more_than_3_days: 'more_than_3_days',
+  };
+
+  // Try calling the FastAPI + Gemini backend first
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/triage/evaluate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        language: data.language,
+        age_group: data.ageGroup,
+        duration: durationMap[data.duration] || 'today',
+        symptoms_text: data.symptomsText || 'No symptoms specified',
+        selected_chips: data.selectedTags || [],
+        photo_url: data.photoPreviewUrl || null,
+        agreed_to_disclaimer: data.disclaimerAccepted,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const backendData = await response.json();
+      
+      let urgency: UrgencyLevel = 'self-care';
+      let carePathStep = 1;
+
+      if (backendData.urgency === 'EMERGENCY_NOW') {
+        urgency = 'emergency';
+        carePathStep = 3;
+      } else if (backendData.urgency === 'CONSULT_SOON') {
+        urgency = 'consult';
+        carePathStep = 2;
+      }
+
+      const headline =
+        backendData.vernacular_guidance?.native_heading ||
+        backendData.title ||
+        (urgency === 'emergency'
+          ? 'Emergency care now'
+          : urgency === 'consult'
+          ? 'Consult a doctor soon'
+          : 'Self-care and monitor');
+
+      const summary =
+        backendData.vernacular_guidance?.native_text ||
+        backendData.subtitle ||
+        backendData.why_explanation ||
+        'Based on the symptoms provided, follow the recommended next steps.';
+
+      return {
+        urgency,
+        headline,
+        summary,
+        medicineGuideEligible: urgency === 'self-care',
+        carePathStep,
+        rationale:
+          backendData.why_explanation ||
+          'Amrit uses the information shared in this triage session to show general next-step guidance. It cannot confirm the cause of a symptom.',
+        safeNextSteps:
+          backendData.safe_next_steps && backendData.safe_next_steps.length > 0
+            ? backendData.safe_next_steps
+            : [
+                'Rest and stay hydrated with clean fluids.',
+                'Monitor your symptoms closely over the next 24 to 48 hours.',
+                'Speak with a pharmacist or healthcare provider before taking relief medicines.',
+              ],
+        redFlags: backendData.emergency_red_flags || RED_FLAG_SYMPTOMS,
+        evaluatedLanguage: data.language,
+        evaluatedAgeGroup: data.ageGroup,
+        evaluatedDuration: data.duration,
+        hasPhotoContext: Boolean(data.photoFile || data.photoPreviewUrl),
+      };
+    }
+  } catch (error) {
+    console.log('[TriageService] Backend connection not available, utilizing local triage logic:', error);
+  }
+
+  // Local fallback triage logic
+  await new Promise((resolve) => setTimeout(resolve, 1500));
 
   const textLower = data.symptomsText.toLowerCase();
   const selectedTagsLower = data.selectedTags.map((t) => t.toLowerCase());
