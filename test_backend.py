@@ -1,5 +1,6 @@
 import requests
 import json
+import io
 
 BASE_URL = "http://127.0.0.1:8000"
 
@@ -34,23 +35,30 @@ def test_emergency_override():
     print(" ✅ Emergency Override Test Passed!")
 
 def test_multimodal_triage():
-    print("\n3. Testing Multimodal Triage with Image and PDF...")
+    print("\n3. Testing Multimodal Triage with in-memory Image and PDF...")
     data = {
-        "symptom_text": "Mild red rash on left forearm since yesterday",
+        "symptom_text": "Mild red rash on left forearm since yesterday, slightly itchy",
         "language": "English",
         "age_group": "Adult",
         "duration": "1–3 days",
         "symptom_tags": json.dumps(["Rash"]),
     }
+    
+    # 1x1 transparent PNG bytes in memory
+    png_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    # Minimal PDF in memory
+    pdf_bytes = b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 100 100]/Parent 2 0 R>>endobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000052 00000 n \n0000000101 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n178\n%%EOF"
+
     files = {
-        "image": ("test_sample.png", open("test_sample.png", "rb"), "image/png"),
-        "document": ("test_sample.pdf", open("test_sample.pdf", "rb"), "application/pdf"),
+        "image": ("sample_skin.png", io.BytesIO(png_bytes), "image/png"),
+        "document": ("sample_summary.pdf", io.BytesIO(pdf_bytes), "application/pdf"),
     }
     r = requests.post(f"{BASE_URL}/api/analyze-symptoms", data=data, files=files)
     assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
     res = r.json()
     print(f" -> Urgency: {res['urgency']}")
     print(f" -> Headline: {res['headline']}")
+    print(f" -> Summary: {res['summary']}")
     print(f" -> Possible Concerns count: {len(res['possible_concerns'])}")
     print(f" -> Image Context Provided: {res['image_context']['provided']}")
     print(f" -> Document Context Provided: {res['document_context']['provided']}")
@@ -65,8 +73,9 @@ def test_multimodal_triage():
 
 def test_upload_endpoint():
     print("\n4. Testing POST /api/upload...")
+    pdf_bytes = b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 100 100]/Parent 2 0 R>>endobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000052 00000 n \n0000000101 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n178\n%%EOF"
     files = {
-        "file": ("test_sample.pdf", open("test_sample.pdf", "rb"), "application/pdf"),
+        "file": ("session_doc.pdf", io.BytesIO(pdf_bytes), "application/pdf"),
     }
     r = requests.post(f"{BASE_URL}/api/upload", files=files)
     assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"

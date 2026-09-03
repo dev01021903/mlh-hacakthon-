@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
+import { DevDiagnosticsPanel } from './components/DevDiagnosticsPanel';
 import { LandingPage } from './pages/LandingPage';
 import { SymptomCheckPage } from './pages/SymptomCheckPage';
 import { ResultPage } from './pages/ResultPage';
@@ -35,7 +36,7 @@ export const App: React.FC = () => {
     <ToastProvider>
       <Router>
         <ScrollToTop />
-        <div className="flex flex-col min-h-screen bg-amrit-bg text-amrit-text">
+        <div className="flex flex-col min-h-screen bg-amrit-bg text-amrit-text relative">
           {/* Sticky Navbar */}
           <Navbar
             currentLanguage={currentLanguage}
@@ -76,6 +77,9 @@ export const App: React.FC = () => {
               <Route path="/how-it-works" element={<HowItWorksPage />} />
             </Routes>
           </main>
+
+          {/* Developer Diagnostics Panel (Hidden in production) */}
+          <DevDiagnosticsPanel />
 
           {/* Footer */}
           <Footer />

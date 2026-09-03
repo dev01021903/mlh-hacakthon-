@@ -1,7 +1,7 @@
 import os
 import json
 import io
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from dotenv import load_dotenv
 
 # Try importing google.genai or google.generativeai
@@ -186,7 +186,6 @@ def analyze_with_gemini(
     if LEGACY_GENAI_AVAILABLE:
         try:
             legacy_genai.configure(api_key=api_key)
-            # Try specified model or fallback to gemini-1.5-flash
             for m in [model_name, "gemini-1.5-flash"]:
                 try:
                     gen_model = legacy_genai.GenerativeModel(
@@ -216,3 +215,84 @@ def analyze_with_gemini(
             print(f"[GeminiService] legacy google.generativeai error: {e}")
 
     return None
+
+def test_gemini_connection() -> Tuple[int, Dict[str, Any]]:
+    """
+    Local-development-only Gemini connection test.
+    Makes one minimal request to verify connectivity and API key validity.
+    Returns (status_code, safe_response_dict).
+    """
+    load_dotenv(override=True)
+    api_key = os.environ.get("GEMINI_API_KEY")
+    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+
+    if not api_key or not api_key.strip():
+        print("Gemini diagnostic failed: missing_key")
+        return 503, {
+            "configured": False,
+            "reachable": False,
+            "message": "Gemini API key is missing from backend configuration.",
+        }
+
+    print("Gemini diagnostic started")
+    test_prompt = "Reply with exactly: GEMINI_CONNECTION_OK"
+
+    # 1. Try google.genai client
+    if GENAI_CLIENT_AVAILABLE:
+        try:
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model=model_name,
+                contents=test_prompt,
+            )
+            if response and response.text:
+                print("Gemini diagnostic succeeded")
+                return 200, {
+                    "configured": True,
+                    "model": model_name,
+                    "reachable": True,
+                    "response_received": True,
+                    "message": "Gemini connection is working.",
+                }
+        except Exception as e:
+            err_str = str(e).lower()
+            if "not found" in err_str or "404" in err_str or "is not supported" in err_str:
+                print("Gemini diagnostic failed: model_unavailable")
+                return 503, {
+                    "configured": True,
+                    "reachable": False,
+                    "message": "Gemini model is unavailable or incorrectly configured.",
+                }
+            print("Gemini diagnostic failed: authentication_or_quota")
+
+    # 2. Try legacy SDK fallback
+    if LEGACY_GENAI_AVAILABLE:
+        try:
+            legacy_genai.configure(api_key=api_key)
+            gen_model = legacy_genai.GenerativeModel(model_name)
+            resp = gen_model.generate_content(test_prompt)
+            if resp and resp.text:
+                print("Gemini diagnostic succeeded")
+                return 200, {
+                    "configured": True,
+                    "model": model_name,
+                    "reachable": True,
+                    "response_received": True,
+                    "message": "Gemini connection is working.",
+                }
+        except Exception as e:
+            err_str = str(e).lower()
+            if "not found" in err_str or "404" in err_str or "is not supported" in err_str:
+                print("Gemini diagnostic failed: model_unavailable")
+                return 503, {
+                    "configured": True,
+                    "reachable": False,
+                    "message": "Gemini model is unavailable or incorrectly configured.",
+                }
+            print("Gemini diagnostic failed: authentication_or_quota")
+
+    return 503, {
+        "configured": True,
+        "reachable": False,
+        "message": "Gemini could not be reached. Check API key, API restrictions, model access, quota, and network connection.",
+    }

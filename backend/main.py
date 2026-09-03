@@ -3,6 +3,7 @@ import json
 import uuid
 from typing import Optional, List
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
@@ -12,6 +13,7 @@ from models.schemas import (
 )
 from services.triage_service import process_symptom_triage
 from services.storage_service import upload_file_to_storage, is_storage_configured
+from services.gemini_service import test_gemini_connection
 
 # Load environment variables from backend/.env if present
 load_dotenv()
@@ -49,6 +51,15 @@ ALLOWED_DOCUMENT_TYPES = ["application/pdf"]
 async def health_check():
     """Health check endpoint."""
     return {"status": "ok"}
+
+@app.get("/api/diagnostics/gemini")
+async def gemini_diagnostics_endpoint():
+    """
+    Local-development-only Gemini connection diagnostic test.
+    Makes a single minimal request to verify connectivity and API key validity.
+    """
+    status_code, response_data = test_gemini_connection()
+    return JSONResponse(status_code=status_code, content=response_data)
 
 @app.post("/api/analyze-symptoms", response_model=TriageAnalysisResponse)
 async def analyze_symptoms_endpoint(

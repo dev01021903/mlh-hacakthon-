@@ -57,9 +57,35 @@ Open [`http://127.0.0.1:5173`](http://127.0.0.1:5173) in your browser.
 
 ---
 
+## 🔍 Verify Gemini Connection
+
+Follow these steps to verify your live Gemini AI connection:
+
+1. **Start FastAPI**: Ensure the backend server is running (`uvicorn main:app --host 127.0.0.1 --port 8000`).
+2. **Open Diagnostic Endpoint**: Visit [`http://127.0.0.1:8000/api/diagnostics/gemini`](http://127.0.0.1:8000/api/diagnostics/gemini) in your browser or run:
+   ```bash
+   curl http://127.0.0.1:8000/api/diagnostics/gemini
+   ```
+3. **Confirm Reachable**: Verify that the JSON response returns:
+   ```json
+   {
+     "configured": true,
+     "model": "gemini-2.0-flash",
+     "reachable": true,
+     "response_received": true,
+     "message": "Gemini connection is working."
+   }
+   ```
+4. **Never Share the API Key**: The diagnostic endpoint checks connectivity using a minimal non-diagnostic test prompt without ever exposing keys, headers, or raw upstream errors.
+
+---
+
 ## 🩺 API Endpoints Overview
 
-1. **`POST /api/analyze-symptoms`** (Multipart Form Data):
+1. **`GET /api/diagnostics/gemini`**:
+   - Diagnostic tool for local development to verify Gemini API key, model accessibility, and reachability.
+
+2. **`POST /api/analyze-symptoms`** (Multipart Form Data):
    - `symptom_text` (Required): User-described symptoms.
    - `language` (Optional): English, Hindi, Kannada, Telugu, Tamil.
    - `age_group` (Optional): Child, Adult, Older adult.
@@ -70,8 +96,8 @@ Open [`http://127.0.0.1:5173`](http://127.0.0.1:5173) in your browser.
    - **Emergency Override:** If red-flag indicators are present, returns `EMERGENCY_NOW` immediately without querying Gemini.
    - **Output Sanitization:** Strips diagnostic certainty and prescriptions.
 
-2. **`POST /api/upload`** (Optional):
+3. **`POST /api/upload`** (Optional):
    - Securely uploads files to private Supabase bucket and returns a temporary signed URL.
 
-3. **`GET /health`**:
+4. **`GET /health`**:
    - Returns `{ "status": "ok" }`.
