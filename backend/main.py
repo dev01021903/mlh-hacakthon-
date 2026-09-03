@@ -48,9 +48,67 @@ ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"]
 ALLOWED_DOCUMENT_TYPES = ["application/pdf"]
 
 @app.get("/health")
+@app.get("/api/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "ok"}
+    """Backend server health check."""
+    return {"status": "ok", "backend": "online"}
+
+@app.get("/api/test-gemini")
+async def test_gemini_endpoint():
+    """
+    Direct Gemini verification endpoint.
+    Attempts a lightweight test call to verify communication.
+    """
+    load_dotenv(override=True)
+    api_key = os.environ.get("GEMINI_API_KEY")
+    model_name = os.environ.get("GEMINI_MODEL") or os.environ.get("GEMINI_MODEL_PRIMARY") or "gemini-2.0-flash"
+
+    if not api_key or not api_key.strip():
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "status": "error",
+                "message": "Failed to connect to Gemini",
+                "details": "GEMINI_API_KEY is not defined in backend configuration (.env)",
+            },
+        )
+
+    try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        resp = client.models.generate_content(
+            model=model_name,
+            contents="Respond with the single word 'Connected'.",
+        )
+        if resp and resp.text:
+            return {
+                "status": "ok",
+                "backend": "online",
+                "gemini": "connected",
+                "response": resp.text.strip(),
+            }
+        else:
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={
+                    "status": "error",
+                    "message": "Failed to connect to Gemini",
+                    "details": "Empty response received from model",
+                },
+            )
+    except Exception as e:
+        err_str = str(e)
+        http_code = status.HTTP_403_FORBIDDEN if "403" in err_str or "permission_denied" in err_str.lower() else status.HTTP_503_SERVICE_UNAVAILABLE
+        # Return clean error details without exposing raw API keys or headers
+        clean_detail = "403 Permission Denied: Generative Language API is disabled for this project." if "403" in err_str or "permission_denied" in err_str.lower() else "Failed to reach Gemini endpoints. Verify key, model, or quota."
+        return JSONResponse(
+            status_code=http_code,
+            content={
+                "status": "error",
+                "message": "Failed to connect to Gemini",
+                "details": clean_detail,
+            },
+        )
 
 @app.get("/api/diagnostics/gemini")
 async def gemini_diagnostics_endpoint():
