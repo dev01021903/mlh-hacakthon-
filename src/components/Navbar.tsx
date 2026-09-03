@@ -32,12 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="flex items-center gap-3 group focus:outline-none"
             aria-label="Amrit Home"
           >
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amrit-teal to-amrit-navy flex items-center justify-center text-white shadow-soft group-hover:scale-105 transition-transform">
-              <div className="relative">
-                <ShieldCheck className="w-6 h-6 text-white" />
-                <HeartPulse className="w-3.5 h-3.5 text-amrit-cyan absolute -bottom-0.5 -right-0.5 animate-pulse" />
-              </div>
-            </div>
+            <img src="/logo.jpg" alt="Amrit Logo" className="w-11 h-11 rounded-xl shadow-soft group-hover:scale-105 transition-transform object-cover" />
             <div className="flex flex-col">
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl font-bold tracking-tight text-amrit-navy">
