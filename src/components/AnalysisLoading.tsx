@@ -1,23 +1,31 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, HeartPulse, Sparkles } from 'lucide-react';
+import { ShieldCheck, HeartPulse, Sparkles, Globe } from 'lucide-react';
 
-const LOADING_MESSAGES = [
+interface AnalysisLoadingProps {
+  languageName?: string;
+}
+
+const LOADING_MESSAGES_BASE = [
   'Checking urgent warning signs…',
-  'Reviewing the information you shared…',
-  'Preparing guidance in your selected language…',
-  'Finalizing safe next-step recommendations…',
+  'Preparing safe guidance…',
+  'Analyzing symptom context with clinical safety guardrails…',
 ];
 
-export const AnalysisLoading: React.FC = () => {
+export const AnalysisLoading: React.FC<AnalysisLoadingProps> = ({ languageName = 'your selected language' }) => {
+  const loadingMessages = [
+    ...LOADING_MESSAGES_BASE,
+    `Translating guidance into ${languageName}…`,
+  ];
+
   const [messageIndex, setMessageIndex] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setMessageIndex((prev) => (prev < LOADING_MESSAGES.length - 1 ? prev + 1 : prev));
+      setMessageIndex((prev) => (prev < loadingMessages.length - 1 ? prev + 1 : prev));
     }, 700);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [loadingMessages.length]);
 
   return (
     <div
@@ -55,11 +63,12 @@ export const AnalysisLoading: React.FC = () => {
           </div>
 
           <h3 className="text-lg sm:text-xl font-bold text-amrit-navy transition-all duration-300 min-h-[32px]">
-            {LOADING_MESSAGES[messageIndex]}
+            {loadingMessages[messageIndex]}
           </h3>
 
-          <p className="text-xs text-amrit-muted font-medium">
-            Evaluating safety parameters, symptoms, and localized guidance...
+          <p className="text-xs text-amrit-muted font-medium flex items-center justify-center gap-1.5">
+            <Globe className="w-3.5 h-3.5 text-amrit-teal" />
+            <span>Multilingual triage & translation in progress...</span>
           </p>
         </div>
 
@@ -69,7 +78,7 @@ export const AnalysisLoading: React.FC = () => {
             Demo guidance — not a diagnosis.
           </p>
           <p className="text-[11px] text-amrit-muted">
-            All analysis is performed securely with strict clinical safety guardrails.
+            All analysis and translations are performed securely on the backend server.
           </p>
         </div>
       </div>

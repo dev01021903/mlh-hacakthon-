@@ -1,23 +1,38 @@
 // FRONTEND DEMO ONLY.
-// TODO: Replace with a secure Flask/FastAPI + Gemini backend after clinical review.
-// Do not expose API keys in the frontend.
+// All health and translation reasoning is handled securely by FastAPI + Gemini + Sarvam AI backend.
+// No API keys are exposed to the browser.
 
-// DEMO ONLY. This is not clinical decision-making or diagnosis.
-
-import { SymptomFormData, TriageResult, UrgencyLevel, PossibleConcern, ImageContextData, DocumentContextData } from '../types';
+import {
+  SymptomFormData,
+  TriageResult,
+  UrgencyLevel,
+  PossibleConcern,
+  ImageContextData,
+  DocumentContextData,
+  LanguageCode,
+  LanguageMeta,
+} from '../types';
 import { RED_FLAG_SYMPTOMS } from '../data/mockData';
 
 const API_BASE_URL = 'http://localhost:8001';
 
-export async function evaluateSymptoms(data: SymptomFormData): Promise<TriageResult> {
-  const languageNames: Record<string, string> = {
-    en: 'English',
-    hi: 'Hindi',
-    kn: 'Kannada',
-    te: 'Telugu',
-    ta: 'Tamil',
-  };
+const LANGUAGE_NAME_MAP: Record<LanguageCode, string> = {
+  en: 'English',
+  hi: 'Hindi',
+  kn: 'Kannada',
+  te: 'Telugu',
+  ta: 'Tamil',
+};
 
+const CODE_TO_SARVAM_MAP: Record<LanguageCode, string> = {
+  en: 'en-IN',
+  hi: 'hi-IN',
+  kn: 'kn-IN',
+  te: 'te-IN',
+  ta: 'ta-IN',
+};
+
+export async function evaluateSymptoms(data: SymptomFormData): Promise<TriageResult> {
   const ageGroupNames: Record<string, string> = {
     child: 'Child',
     adult: 'Adult',
@@ -30,11 +45,10 @@ export async function evaluateSymptoms(data: SymptomFormData): Promise<TriageRes
     more_than_3_days: 'More than 3 days',
   };
 
-  const langStr = languageNames[data.language] || 'English';
+  const langStr = LANGUAGE_NAME_MAP[data.language] || 'English';
   const ageStr = ageGroupNames[data.ageGroup] || 'Adult';
   const durStr = durationNames[data.duration] || 'Started today';
 
-  // Try calling the FastAPI + Gemini backend endpoint
   try {
     const formData = new FormData();
     formData.append('symptom_text', data.symptomsText || 'No detailed symptoms specified');
@@ -96,8 +110,16 @@ export async function evaluateSymptoms(data: SymptomFormData): Promise<TriageRes
         limitation: 'Medical documents cannot be clinically interpreted online.',
       };
 
+      const languageMeta: LanguageMeta = backendData.language || {
+        requested: langStr,
+        code: CODE_TO_SARVAM_MAP[data.language] || 'en-IN',
+        translation_status: data.language === 'en' ? 'original_english' : 'translated',
+        translation_notice: null,
+      };
+
       return {
         urgency,
+        language: languageMeta,
         headline: backendData.headline || (urgency === 'emergency' ? 'Emergency care now' : urgency === 'consult' ? 'Consult a doctor soon' : 'Self-care and monitor'),
         summary: backendData.summary || 'A clear next-step summary based on the information shared.',
         possibleConcerns,
@@ -109,6 +131,7 @@ export async function evaluateSymptoms(data: SymptomFormData): Promise<TriageRes
         redFlags: Array.isArray(backendData.red_flags) && backendData.red_flags.length > 0
           ? backendData.red_flags
           : RED_FLAG_SYMPTOMS,
+        emergencyAction: backendData.emergency_action || 'In an emergency, immediately call 112 or 108, or go to the nearest emergency department.',
         medicineGuideEligible: Boolean(backendData.medicine_guide_eligible),
         carePathStep,
         rationale: backendData.summary || 'Amrit uses the information shared in this triage session to show general next-step guidance.',
@@ -132,29 +155,18 @@ export async function evaluateSymptoms(data: SymptomFormData): Promise<TriageRes
 
   const emergencyKeywords = [
     'difficulty breathing',
-    'breathing difficulty',
     'severe chest pain',
-    'chest pain',
     'unconscious',
     'heavy bleeding',
-    'bleeding heavily',
     'seizure',
     'face swelling',
-    'facial swelling',
     'throat swelling',
     'suicidal thoughts',
     'sudden weakness',
     'blue lips',
   ];
 
-  const consultKeywords = [
-    'rash',
-    'swelling',
-    'pain',
-    'fever',
-    'eye redness',
-    'wound',
-  ];
+  const consultKeywords = ['rash', 'swelling', 'pain', 'fever', 'eye redness', 'wound'];
 
   const hasEmergencyWord = emergencyKeywords.some((kw) => textLower.includes(kw));
   const hasConsultWord =
@@ -221,6 +233,12 @@ export async function evaluateSymptoms(data: SymptomFormData): Promise<TriageRes
 
   return {
     urgency,
+    language: {
+      requested: langStr,
+      code: CODE_TO_SARVAM_MAP[data.language] || 'en-IN',
+      translation_status: data.language === 'en' ? 'original_english' : 'fallback_english',
+      translation_notice: data.language === 'en' ? null : 'Translation is temporarily unavailable. Showing English guidance.',
+    },
     headline,
     summary,
     possibleConcerns,
@@ -237,6 +255,7 @@ export async function evaluateSymptoms(data: SymptomFormData): Promise<TriageRes
     },
     safeNextSteps,
     redFlags: RED_FLAG_SYMPTOMS,
+    emergencyAction: 'In an emergency, immediately call 112 or 108, or go to the nearest emergency department.',
     medicineGuideEligible,
     carePathStep,
     rationale:
@@ -248,5 +267,81 @@ export async function evaluateSymptoms(data: SymptomFormData): Promise<TriageRes
     evaluatedDuration: durStr,
     hasPhotoContext: Boolean(data.photoFile || data.photoPreviewUrl),
     hasDocumentContext: Boolean(data.documentFile),
+  };
+}
+
+export async function translateTriageResult(
+  currentResult: TriageResult,
+  targetLanguageCode: LanguageCode
+): Promise<TriageResult> {
+  const targetLanguageName = LANGUAGE_NAME_MAP[targetLanguageCode] || 'English';
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/translate-triage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        triage_response: {
+          urgency: currentResult.urgency === 'emergency' ? 'EMERGENCY_NOW' : currentResult.urgency === 'consult' ? 'CONSULT_SOON' : 'SELF_CARE',
+          headline: currentResult.headline,
+          summary: currentResult.summary,
+          possible_concerns: currentResult.possibleConcerns,
+          image_context: currentResult.imageContext,
+          document_context: currentResult.documentContext,
+          safe_next_steps: currentResult.safeNextSteps,
+          red_flags: currentResult.redFlags,
+          emergency_action: currentResult.emergencyAction || 'In an emergency, immediately call 112 or 108.',
+          medicine_guide_eligible: currentResult.medicineGuideEligible,
+          disclaimer: currentResult.disclaimer,
+          evaluated_age_group: currentResult.evaluatedAgeGroup,
+          evaluated_duration: currentResult.evaluatedDuration,
+        },
+        target_language: targetLanguageName,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        ...currentResult,
+        language: data.language || {
+          requested: targetLanguageName,
+          code: CODE_TO_SARVAM_MAP[targetLanguageCode] || 'en-IN',
+          translation_status: targetLanguageCode === 'en' ? 'original_english' : 'translated',
+          translation_notice: null,
+        },
+        headline: data.headline || currentResult.headline,
+        summary: data.summary || currentResult.summary,
+        possibleConcerns: Array.isArray(data.possible_concerns)
+          ? data.possible_concerns
+          : currentResult.possibleConcerns,
+        safeNextSteps: Array.isArray(data.safe_next_steps)
+          ? data.safe_next_steps
+          : currentResult.safeNextSteps,
+        redFlags: Array.isArray(data.red_flags)
+          ? data.red_flags
+          : currentResult.redFlags,
+        emergencyAction: data.emergency_action || currentResult.emergencyAction,
+        disclaimer: data.disclaimer || currentResult.disclaimer,
+        imageContext: data.image_context || currentResult.imageContext,
+        documentContext: data.document_context || currentResult.documentContext,
+        evaluatedLanguage: targetLanguageName,
+      };
+    }
+  } catch (err) {
+    console.log('[TriageService] Translation endpoint unavailable:', err);
+  }
+
+  return {
+    ...currentResult,
+    evaluatedLanguage: targetLanguageName,
+    language: {
+      requested: targetLanguageName,
+      code: CODE_TO_SARVAM_MAP[targetLanguageCode] || 'en-IN',
+      translation_status: targetLanguageCode === 'en' ? 'original_english' : 'fallback_english',
+      translation_notice: targetLanguageCode === 'en' ? null : 'Translation is temporarily unavailable. Showing English guidance.',
+    },
   };
 }

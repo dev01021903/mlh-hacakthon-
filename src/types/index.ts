@@ -13,6 +13,13 @@ export type AgeGroup = 'child' | 'adult' | 'older_adult';
 
 export type SymptomDuration = 'today' | '1_to_3_days' | 'more_than_3_days';
 
+export interface LanguageMeta {
+  requested: string;
+  code: string;
+  translation_status: 'translated' | 'original_english' | 'fallback_english';
+  translation_notice?: string | null;
+}
+
 export interface PossibleConcern {
   category: string;
   uncertainty_note: string;
@@ -46,6 +53,7 @@ export interface SymptomFormData {
 
 export interface TriageResult {
   urgency: UrgencyLevel;
+  language?: LanguageMeta;
   headline: string;
   summary: string;
   possibleConcerns: PossibleConcern[];
@@ -56,6 +64,7 @@ export interface TriageResult {
   rationale: string;
   safeNextSteps: string[];
   redFlags: string[];
+  emergencyAction?: string;
   disclaimer: string;
   evaluatedLanguage: string;
   evaluatedAgeGroup: string;

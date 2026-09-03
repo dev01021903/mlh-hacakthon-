@@ -9,19 +9,21 @@ from dotenv import load_dotenv
 
 from models.schemas import (
     TriageAnalysisResponse,
+    TranslateTriageRequest,
     FileUploadResponse,
 )
 from services.triage_service import process_symptom_triage
 from services.storage_service import upload_file_to_storage, is_storage_configured
 from services.gemini_service import test_gemini_connection, test_gemini_connection_details
+from services.sarvam_translation_service import sarvam_service
 
 # Load environment variables from backend/.env if present
 load_dotenv()
 
 app = FastAPI(
     title="AMRIT Health Triage API",
-    description="Multilingual, multimodal, safety-first health triage assistant for India.",
-    version="2.0.0",
+    description="Multilingual (Gemini + Sarvam AI), multimodal, safety-first health triage assistant for India.",
+    version="2.1.0",
 )
 
 # CORS setup for local development
@@ -52,6 +54,33 @@ ALLOWED_DOCUMENT_TYPES = ["application/pdf"]
 async def health_check():
     """Backend server health check."""
     return {"status": "ok", "backend": "online"}
+
+@app.get("/api/diagnostics/gemini")
+async def gemini_diagnostics_endpoint():
+    """
+    Local-development-only Gemini connection diagnostic test.
+    Makes a single minimal request with exponential backoff for transient issues.
+    """
+    status_code, response_data = test_gemini_connection()
+    return JSONResponse(status_code=status_code, content=response_data)
+
+@app.get("/api/diagnostics/gemini-details")
+async def gemini_diagnostics_details_endpoint():
+    """
+    Local-development-only detailed Gemini diagnostic test.
+    Returns structured error categories, model availability, and fallback testing.
+    """
+    status_code, response_data = test_gemini_connection_details()
+    return JSONResponse(status_code=status_code, content=response_data)
+
+@app.get("/api/diagnostics/sarvam")
+async def sarvam_diagnostics_endpoint():
+    """
+    Local-development-only Sarvam AI translation diagnostic test.
+    Tests translating a short harmless phrase without exposing secrets.
+    """
+    status_code, response_data = sarvam_service.test_connection()
+    return JSONResponse(status_code=status_code, content=response_data)
 
 @app.get("/api/test-gemini")
 async def test_gemini_endpoint():
@@ -99,7 +128,6 @@ async def test_gemini_endpoint():
     except Exception as e:
         err_str = str(e)
         http_code = status.HTTP_403_FORBIDDEN if "403" in err_str or "permission_denied" in err_str.lower() else status.HTTP_503_SERVICE_UNAVAILABLE
-        # Return clean error details without exposing raw API keys or headers
         clean_detail = "403 Permission Denied: Generative Language API is disabled for this project." if "403" in err_str or "permission_denied" in err_str.lower() else "Failed to reach Gemini endpoints. Verify key, model, or quota."
         return JSONResponse(
             status_code=http_code,
@@ -109,24 +137,6 @@ async def test_gemini_endpoint():
                 "details": clean_detail,
             },
         )
-
-@app.get("/api/diagnostics/gemini")
-async def gemini_diagnostics_endpoint():
-    """
-    Local-development-only Gemini connection diagnostic test.
-    Makes a single minimal request with exponential backoff for transient issues.
-    """
-    status_code, response_data = test_gemini_connection()
-    return JSONResponse(status_code=status_code, content=response_data)
-
-@app.get("/api/diagnostics/gemini-details")
-async def gemini_diagnostics_details_endpoint():
-    """
-    Local-development-only detailed Gemini diagnostic test.
-    Returns structured error categories, model availability, and fallback testing.
-    """
-    status_code, response_data = test_gemini_connection_details()
-    return JSONResponse(status_code=status_code, content=response_data)
 
 @app.post("/api/analyze-symptoms", response_model=TriageAnalysisResponse)
 async def analyze_symptoms_endpoint(
@@ -139,11 +149,13 @@ async def analyze_symptoms_endpoint(
     document: Optional[UploadFile] = File(None),
 ):
     """
-    Main Triage Endpoint:
-    Accepts multipart form-data with text, optional image, and optional PDF document.
-    Executes deterministic emergency checks first, followed by safe Gemini triage.
+    Main Multilingual Triage Endpoint:
+    1. Normalizes input language.
+    2. Deterministic emergency red-flag override (routes to 112/108 immediately).
+    3. Translates non-English inputs to English for Gemini non-diagnostic reasoning.
+    4. Validates output in English.
+    5. Uses Sarvam AI to translate final user-facing response to target Indian language.
     """
-    # 1. Validate required symptom text
     clean_symptom_text = symptom_text.strip()
     if not clean_symptom_text:
         raise HTTPException(
@@ -161,7 +173,7 @@ async def analyze_symptoms_endpoint(
         except Exception:
             tags_list = [t.strip() for t in symptom_tags.split(",") if t.strip()]
 
-    # 2. Validate Image (type and size)
+    # Validate Image
     image_bytes: Optional[bytes] = None
     image_content_type: Optional[str] = None
     if image and image.filename:
@@ -178,7 +190,7 @@ async def analyze_symptoms_endpoint(
             )
         image_content_type = image.content_type
 
-    # 3. Validate Document (PDF type and size)
+    # Validate Document
     pdf_bytes: Optional[bytes] = None
     if document and document.filename:
         if document.content_type not in ALLOWED_DOCUMENT_TYPES:
@@ -194,7 +206,6 @@ async def analyze_symptoms_endpoint(
             )
 
     try:
-        # Process triage safely (In-memory, never logs private health details or keys)
         result = process_symptom_triage(
             symptom_text=clean_symptom_text,
             language=language,
@@ -208,15 +219,33 @@ async def analyze_symptoms_endpoint(
         return result
     except Exception as e:
         print(f"[MainAPI] Unexpected triage processing error: {e}")
-        # Return a safe, non-revealing error
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Triage analysis could not be completed safely. Please consult a qualified healthcare professional.",
         )
     finally:
-        # Guarantee memory / temporary data cleanup
         image_bytes = None
         pdf_bytes = None
+
+@app.post("/api/translate-triage", response_model=TriageAnalysisResponse)
+async def translate_triage_endpoint(payload: TranslateTriageRequest):
+    """
+    Translates an existing, already validated triage response into another target language.
+    Does NOT rerun Gemini reasoning.
+    """
+    try:
+        translated_res = sarvam_service.translate_triage_response(
+            payload.triage_response,
+            payload.target_language,
+        )
+        return translated_res
+    except Exception as e:
+        print(f"[MainAPI] Translate triage error: {e}")
+        # Return original with fallback notice
+        orig = payload.triage_response
+        orig.language.translation_status = "fallback_english"
+        orig.language.translation_notice = "Translation is temporarily unavailable. Showing English guidance."
+        return orig
 
 @app.post("/api/upload", response_model=FileUploadResponse)
 async def upload_file_endpoint(file: UploadFile = File(...)):
@@ -225,7 +254,6 @@ async def upload_file_endpoint(file: UploadFile = File(...)):
     Validates file type and size, generates short-lived signed URL, never public URLs.
     """
     if not is_storage_configured():
-        # Safe response when storage is not configured for hackathon demo
         return FileUploadResponse(
             storage_path=f"demo_session/{uuid.uuid4().hex}_{file.filename}",
             file_name=file.filename or "file",
@@ -238,7 +266,6 @@ async def upload_file_endpoint(file: UploadFile = File(...)):
     file_bytes = await file.read()
     content_type = file.content_type or "application/octet-stream"
 
-    # Validate file size
     if content_type in ALLOWED_IMAGE_TYPES and len(file_bytes) > MAX_IMAGE_SIZE:
         raise HTTPException(status_code=400, detail="Image exceeds 5 MB limit.")
     elif content_type in ALLOWED_DOCUMENT_TYPES and len(file_bytes) > MAX_DOCUMENT_SIZE:
@@ -261,32 +288,6 @@ async def upload_file_endpoint(file: UploadFile = File(...)):
         signed_url=signed_url,
         message="File uploaded securely to private storage with a temporary signed URL.",
     )
-
-# Backward-compatible endpoints for collaborator integration
-@app.post("/api/v1/speech/transcribe")
-async def transcribe_speech_endpoint():
-    return {
-        "transcribed_text": "कल से मेरी बाँह पर लाल चकत्ते हैं और खुजली हो रही है",
-        "detected_language": "hi",
-        "confidence": 0.95,
-        "duration_seconds": 3.2
-    }
-
-@app.post("/api/v1/vision/check-photo")
-async def check_photo_endpoint():
-    return {
-        "is_acceptable": True,
-        "quality_assessment": "good",
-        "blur_score": 0.12,
-        "lighting_score": 0.88,
-        "detected_visual_features": ["erythema", "localized_rash"],
-        "content_safety_passed": True,
-        "guidance_tip": "Photo has good focus and lighting."
-    }
-
-@app.post("/api/v1/feedback")
-async def feedback_endpoint():
-    return {"status": "success", "message": "Feedback recorded."}
 
 if __name__ == "__main__":
     import uvicorn

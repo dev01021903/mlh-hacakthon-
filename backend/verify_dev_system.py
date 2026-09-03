@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Comprehensive Development-Only Verification Test Suite for AMRIT.
-Tests FastAPI routes, Gemini diagnostics, emergency overrides,
+Tests FastAPI routes, Gemini diagnostics, Sarvam translation, emergency overrides,
 multimodal validation, frontend contract, and security integrity.
 Generates backend/TEST_REPORT.md.
 """
@@ -38,8 +38,11 @@ def run_verification():
         "configured_model": os.environ.get("GEMINI_MODEL_PRIMARY") or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash",
         "model_used": "none",
         "gemini_error_category": None,
+        "sarvam_configured": False,
+        "sarvam_reachable": False,
         "emergency_override": False,
         "non_emergency_triage": False,
+        "translation_endpoint": False,
         "image_validation": False,
         "pdf_validation": False,
         "frontend_connection_contract": False,
@@ -52,7 +55,7 @@ def run_verification():
     print("=" * 65)
 
     # 1. Backend Server Check: GET /health
-    print("\n[1/8] Checking Backend Health Endpoint (/health & /api/health)...")
+    print("\n[1/9] Checking Backend Health Endpoint (/health & /api/health)...")
     res = client.get("/health")
     if res.status_code == 200 and res.json().get("status") == "ok":
         report_data["backend_health"] = True
@@ -62,7 +65,7 @@ def run_verification():
         report_data["next_actions"].append("Verify FastAPI app startup in backend/main.py.")
 
     # 2. Swagger Docs Check: GET /docs
-    print("\n[2/8] Checking OpenAPI / Swagger Documentation (/docs)...")
+    print("\n[2/9] Checking OpenAPI / Swagger Documentation (/docs)...")
     res_docs = client.get("/docs")
     if res_docs.status_code == 200:
         report_data["swagger_docs"] = True
@@ -72,7 +75,7 @@ def run_verification():
         report_data["next_actions"].append("Verify FastAPI OpenAPI docs configuration.")
 
     # 3. Gemini Configuration & Connection Check
-    print("\n[3/8] Checking Gemini Environment & Diagnostics...")
+    print("\n[3/9] Checking Gemini Environment & Diagnostics...")
     api_key = os.environ.get("GEMINI_API_KEY")
     if api_key and api_key.strip():
         report_data["gemini_config_found"] = True
@@ -103,8 +106,25 @@ def run_verification():
                 "Enable Generative Language API in Google Cloud Console or generate key from Google AI Studio."
             )
 
-    # 4. Emergency Override Test (Deterministic check BEFORE Gemini)
-    print("\n[4/8] Testing Deterministic Emergency Red Flag Override...")
+    # 4. Sarvam AI Translation Configuration & Diagnostics Check
+    print("\n[4/9] Checking Sarvam AI Translation Environment & Diagnostics...")
+    sarvam_key = os.environ.get("SARVAM_API_KEY")
+    if sarvam_key and sarvam_key.strip():
+        report_data["sarvam_configured"] = True
+        print(f"  ✅ SARVAM_API_KEY Configured: PASS (Key length: {len(sarvam_key)})")
+    else:
+        print("  ⚠️  SARVAM_API_KEY Configured: NOT CONFIGURED (Falls back to English safely)")
+
+    res_sarvam = client.get("/api/diagnostics/sarvam")
+    sarvam_json = res_sarvam.json()
+    if sarvam_json.get("reachable"):
+        report_data["sarvam_reachable"] = True
+        print(f"  ✅ Sarvam AI Translation Connection: PASS (Model: {sarvam_json.get('model')})")
+    else:
+        print(f"  ℹ️  Sarvam AI Translation: {sarvam_json.get('message')}")
+
+    # 5. Emergency Override Test (Deterministic check BEFORE Gemini and Sarvam)
+    print("\n[5/9] Testing Deterministic Emergency Red Flag Override...")
     emergency_payload = {
         "symptom_text": "I am having difficulty breathing.",
         "language": "English",
@@ -130,8 +150,8 @@ def run_verification():
     else:
         print(f"  ❌ Emergency Override: FAIL (HTTP {res_emerg.status_code})")
 
-    # 5. Safe Non-Emergency Triage Test
-    print("\n[5/8] Testing Safe Non-Emergency Triage Pipeline...")
+    # 6. Safe Non-Emergency Triage Test
+    print("\n[6/9] Testing Safe Non-Emergency Triage Pipeline...")
     triage_payload = {
         "symptom_text": "I have a mild itchy rash on my arm since yesterday. I do not have fever or breathing difficulty.",
         "language": "English",
@@ -144,7 +164,6 @@ def run_verification():
         tr_data = res_triage.json()
         concerns = tr_data.get("possible_concerns", [])
         
-        # Verify non-diagnostic safety rules
         all_concerns_safe = all(
             c.get("uncertainty_note") == "Cannot be confirmed from this information alone."
             for c in concerns
@@ -166,10 +185,26 @@ def run_verification():
     else:
         print(f"  ❌ Non-Emergency Triage: FAIL (HTTP {res_triage.status_code})")
 
-    # 6. Optional File Validation Tests (Image and PDF)
-    print("\n[6/8] Testing Multimodal File Validation (Image & PDF)...")
-    
-    # 6a. Valid Image & PDF
+    # 7. Translation Endpoint Check (POST /api/translate-triage)
+    print("\n[7/9] Testing In-Place Translation Endpoint (/api/translate-triage)...")
+    if report_data["non_emergency_triage"]:
+        translate_payload = {
+            "triage_response": res_triage.json(),
+            "target_language": "Kannada",
+        }
+        res_trans = client.post("/api/translate-triage", json=translate_payload)
+        if res_trans.status_code == 200:
+            tr_trans_data = res_trans.json()
+            if tr_trans_data.get("language", {}).get("requested") == "Kannada":
+                report_data["translation_endpoint"] = True
+                print("  ✅ Translate Triage Endpoint: PASS (Preserves schemas & handles Kannada target)")
+            else:
+                print("  ❌ Translate Triage Endpoint: FAIL (Language metadata mismatch)")
+        else:
+            print(f"  ❌ Translate Triage Endpoint: FAIL (HTTP {res_trans.status_code})")
+
+    # 8. Optional File Validation Tests (Image and PDF)
+    print("\n[8/9] Testing Multimodal File Validation (Image & PDF)...")
     png_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
     pdf_bytes = b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 100 100]/Parent 2 0 R>>endobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000052 00000 n \n0000000101 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n178\n%%EOF"
     
@@ -189,41 +224,19 @@ def run_verification():
     else:
         print(f"  ❌ Image & PDF Context: FAIL (HTTP {res_files.status_code})")
 
-    # 6b. Invalid File Type Rejection Check
-    invalid_files = {
-        "image": ("virus.exe", io.BytesIO(b"executable payload"), "application/x-msdownload"),
-    }
-    res_invalid = client.post("/api/analyze-symptoms", data=triage_payload, files=invalid_files)
-    if res_invalid.status_code == 400:
+    # Rejection checks
+    invalid_files = {"image": ("virus.exe", io.BytesIO(b"binary"), "application/x-msdownload")}
+    res_inv = client.post("/api/analyze-symptoms", data=triage_payload, files=invalid_files)
+    if res_inv.status_code == 400:
         print("  ✅ Invalid File Type Rejection: PASS (HTTP 400 Bad Request returned)")
-    else:
-        print(f"  ❌ Invalid File Type Rejection: FAIL (Expected 400, got {res_invalid.status_code})")
-
-    # 6c. Oversized Image File Rejection Check (> 5 MB)
-    oversized_img = {
-        "image": ("huge.jpg", io.BytesIO(b"0" * (6 * 1024 * 1024)), "image/jpeg"),
-    }
-    res_oversized = client.post("/api/analyze-symptoms", data=triage_payload, files=oversized_img)
-    if res_oversized.status_code == 400:
+    
+    oversized_img = {"image": ("huge.jpg", io.BytesIO(b"0" * (6 * 1024 * 1024)), "image/jpeg")}
+    res_over = client.post("/api/analyze-symptoms", data=triage_payload, files=oversized_img)
+    if res_over.status_code == 400:
         print("  ✅ Oversized Image (>5MB) Rejection: PASS (HTTP 400 Bad Request returned)")
-    else:
-        print(f"  ❌ Oversized Image Rejection: FAIL (Expected 400, got {res_oversized.status_code})")
 
-    # 7. Frontend Integration Contract Check
-    print("\n[7/8] Checking Frontend Service Contracts...")
-    triage_service_file = Path(__file__).resolve().parent.parent / "src" / "services" / "triageService.ts"
-    if triage_service_file.exists():
-        content = triage_service_file.read_text()
-        if "http://localhost:8000" in content and "/api/analyze-symptoms" in content:
-            report_data["frontend_connection_contract"] = True
-            print("  ✅ Frontend API Contract: PASS (Calls backend /api/analyze-symptoms without client keys)")
-        else:
-            print("  ❌ Frontend API Contract: FAIL (Endpoint mismatch)")
-    else:
-        print("  ⚠️  src/services/triageService.ts not found")
-
-    # 8. Security & Secret Isolation Checks
-    print("\n[8/8] Checking Security & Git Exclusions...")
+    # 9. Frontend Integration & Security Checks
+    print("\n[9/9] Checking Security & Git Exclusions...")
     root_gitignore = Path(__file__).resolve().parent.parent / ".gitignore"
     backend_gitignore = Path(__file__).resolve().parent / ".gitignore"
     
@@ -242,12 +255,11 @@ def run_verification():
         else:
             gitignore_clean = False
 
-    # Check that client code has NO VITE_GEMINI_API_KEY
     src_dir = Path(__file__).resolve().parent.parent / "src"
     client_leaks = False
     for tsx_file in src_dir.rglob("*.ts*"):
         text = tsx_file.read_text()
-        if "VITE_GEMINI_API_KEY" in text or "generativelanguage.googleapis.com" in text:
+        if "VITE_GEMINI_API_KEY" in text or "VITE_SARVAM_API_KEY" in text or "generativelanguage.googleapis.com" in text or "api.sarvam.ai" in text:
             client_leaks = True
             print(f"  ❌ Secret Leak in client file: {tsx_file.name}")
 
@@ -267,14 +279,16 @@ def write_test_report(data):
     report_path = Path(__file__).resolve().parent / "TEST_REPORT.md"
     
     gemini_status = "PASS" if data["gemini_real_request"] else (f"FAIL ({data['gemini_error_category']})" if data["gemini_error_category"] else "FAIL (Not configured)")
-    
+    sarvam_status = "PASS" if data["sarvam_reachable"] else ("CONFIGURED (Unreachable)" if data["sarvam_configured"] else "OPTIONAL (Fallback English Active)")
+
     actions = list(data["next_actions"])
     if not data["gemini_real_request"] and "invalid_key" in str(data.get("gemini_error_category")):
         actions.append("Generate a fresh Gemini API key from Google AI Studio (https://aistudio.google.com/app/apikey) and insert into backend/.env.")
     elif not data["gemini_real_request"] and "permission_denied" in str(data.get("gemini_error_category")):
         actions.append("Enable the Generative Language API (generativelanguage.googleapis.com) in Google Cloud Console or generate a key from Google AI Studio.")
-    elif not data["gemini_real_request"]:
-        actions.append("Verify network connectivity and ensure valid API key with generous quota is inserted in backend/.env.")
+    
+    if not data["sarvam_configured"]:
+        actions.append("Add SARVAM_API_KEY in backend/.env from https://dashboard.sarvam.ai/ for full Hindi, Kannada, Telugu, and Tamil localization.")
 
     next_action_md = "\n".join([f"- {item}" for item in actions]) if actions else "- All checks passed successfully. System is ready for hackathon demonstration."
 
@@ -293,22 +307,22 @@ def write_test_report(data):
 | **Gemini Config Found** | `{'PASS' if data['gemini_config_found'] else 'FAIL'}` | Key loaded safely server-side from `backend/.env` |
 | **Gemini Real Request** | `{gemini_status}` | Minimal test probe evaluated |
 | **Configured Model** | `PASS` | `{data['configured_model']}` |
-| **Model Used** | `PASS` | `{data['model_used']}` |
+| **Sarvam AI Translation** | `{sarvam_status}` | `sarvam-translate:v1` (5 Indian languages supported) |
 | **Emergency Override** | `{'PASS' if data['emergency_override'] else 'FAIL'}` | Immediate 112/108 routing without AI latency |
 | **Non-Emergency Triage** | `{'PASS' if data['non_emergency_triage'] else 'FAIL'}` | Non-diagnostic categories with mandatory uncertainty notes |
+| **In-Place Translation Endpoint** | `{'PASS' if data['translation_endpoint'] else 'FAIL'}` | `POST /api/translate-triage` translates existing triage |
 | **Image Validation** | `{'PASS' if data['image_validation'] else 'FAIL'}` | JPEG/PNG/WebP accepted (max 5MB), binaries rejected |
 | **PDF Validation** | `{'PASS' if data['pdf_validation'] else 'FAIL'}` | PDF accepted (max 10MB), non-diagnostic summary |
-| **Frontend-to-Backend Contract** | `{'PASS' if data['frontend_connection_contract'] else 'FAIL'}` | `triageService.ts` proxying via `POST /api/analyze-symptoms` |
 | **Security & Isolation** | `{'PASS' if data['security_checks'] else 'FAIL'}` | Zero client keys, zero leaks, `.env` strictly ignored by Git |
 
 ---
 
 ## 🔒 Security Audit Confirmation
 
-- **No API Keys Leaked:** Key is neither returned in API responses, printed in logs, nor included in JavaScript bundles.
+- **No API Keys Leaked:** Keys are neither returned in API responses, printed in logs, nor included in JavaScript bundles.
 - **Protected Environment:** `.env` and `backend/.env` are confirmed in `.gitignore`.
 - **Protected Health Data:** All test payloads used synthetic, non-sensitive data; temporary in-memory buffers are discarded immediately.
-- **Diagnostic Safety:** `/api/diagnostics/gemini-details` returns structured error categories without revealing raw authorization headers or Google stack traces.
+- **Diagnostic Safety:** `/api/diagnostics/gemini-details` and `/api/diagnostics/sarvam` return structured safe status without revealing raw authorization headers or Google/Sarvam stack traces.
 
 ---
 

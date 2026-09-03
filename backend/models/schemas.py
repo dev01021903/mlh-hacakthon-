@@ -7,8 +7,14 @@ class UrgencyEnum(str, Enum):
     CONSULT_SOON = "CONSULT_SOON"
     EMERGENCY_NOW = "EMERGENCY_NOW"
 
+class LanguageMetadata(BaseModel):
+    requested: str = "English"
+    code: str = "en-IN"
+    translation_status: str = "original_english"  # "translated" | "original_english" | "fallback_english"
+    translation_notice: Optional[str] = None
+
 class PossibleConcern(BaseModel):
-    category: str = Field(..., description="Broad, non-diagnostic concern category (e.g. Skin irritation or rash-related concern)")
+    category: str = Field(..., description="Broad, non-diagnostic concern category")
     uncertainty_note: str = Field(default="Cannot be confirmed from this information alone.", description="Mandatory uncertainty statement")
 
 class ImageContext(BaseModel):
@@ -24,6 +30,7 @@ class DocumentContext(BaseModel):
 
 class TriageAnalysisResponse(BaseModel):
     urgency: UrgencyEnum
+    language: LanguageMetadata = Field(default_factory=LanguageMetadata)
     headline: str
     summary: str
     possible_concerns: List[PossibleConcern] = Field(default_factory=list, max_length=3)
@@ -31,11 +38,15 @@ class TriageAnalysisResponse(BaseModel):
     document_context: DocumentContext = Field(default_factory=DocumentContext)
     safe_next_steps: List[str] = Field(default_factory=list)
     red_flags: List[str] = Field(default_factory=list)
+    emergency_action: str = "In an emergency, immediately call 112 or 108, or go to the nearest emergency department."
     medicine_guide_eligible: bool = False
     disclaimer: str = "Amrit provides general triage guidance only. It does not diagnose conditions, prescribe medicines, or replace a qualified healthcare professional."
-    evaluated_language: str = "English"
     evaluated_age_group: str = "Adult"
     evaluated_duration: str = "Started today"
+
+class TranslateTriageRequest(BaseModel):
+    triage_response: TriageAnalysisResponse
+    target_language: str = "English"
 
 class FileUploadResponse(BaseModel):
     storage_path: str
