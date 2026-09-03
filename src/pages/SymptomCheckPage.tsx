@@ -213,7 +213,7 @@ export const SymptomCheckPage: React.FC<SymptomCheckPageProps> = ({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
       {/* Loading Overlay */}
-      {isAnalyzing && <AnalysisLoading languageName={languageDisplayMap[formData.language] || 'selected language'} />}
+      {isAnalyzing && <AnalysisLoading languageName={languageDisplayMap[language] || 'selected language'} />}
 
       {/* Progress Stepper */}
       <div className="mb-10">
