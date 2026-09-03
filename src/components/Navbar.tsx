@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ShieldCheck, HeartPulse, Globe, ArrowRight, Menu, X } from 'lucide-react';
+import { Globe, ArrowRight, Menu, X } from 'lucide-react';
 import { SUPPORTED_LANGUAGES } from '../data/languages';
 import { LanguageCode } from '../types';
 
