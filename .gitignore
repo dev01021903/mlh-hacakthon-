@@ -1,4 +1,31 @@
-venv/
-__pycache__/
-*.pyc
+# Environments & Secrets
 .env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Python
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pypa
+
+# Node & Build
+node_modules/
+dist/
+dist-ssr/
+*.local
+tsconfig.tsbuildinfo
+
+# OS & Logs
+.DS_Store
+.DS_Store?
+._*
+*.log
+npm-debug.log*
+yarn-debug.log*

@@ -13,6 +13,24 @@ export type AgeGroup = 'child' | 'adult' | 'older_adult';
 
 export type SymptomDuration = 'today' | '1_to_3_days' | 'more_than_3_days';
 
+export interface PossibleConcern {
+  category: string;
+  uncertainty_note: string;
+}
+
+export interface ImageContextData {
+  provided: boolean;
+  quality: string;
+  observation: string;
+  limitation: string;
+}
+
+export interface DocumentContextData {
+  provided: boolean;
+  summary: string;
+  limitation: string;
+}
+
 export interface SymptomFormData {
   language: LanguageCode;
   ageGroup: AgeGroup;
@@ -21,6 +39,8 @@ export interface SymptomFormData {
   selectedTags: string[];
   photoFile?: File | null;
   photoPreviewUrl?: string | null;
+  documentFile?: File | null;
+  documentFileName?: string | null;
   disclaimerAccepted: boolean;
 }
 
@@ -28,15 +48,20 @@ export interface TriageResult {
   urgency: UrgencyLevel;
   headline: string;
   summary: string;
+  possibleConcerns: PossibleConcern[];
+  imageContext: ImageContextData;
+  documentContext: DocumentContextData;
   medicineGuideEligible: boolean;
   carePathStep: number; // 1: Self-care, 2: Consult, 3: Emergency
   rationale: string;
   safeNextSteps: string[];
   redFlags: string[];
-  evaluatedLanguage: LanguageCode;
-  evaluatedAgeGroup: AgeGroup;
-  evaluatedDuration: SymptomDuration;
+  disclaimer: string;
+  evaluatedLanguage: string;
+  evaluatedAgeGroup: string;
+  evaluatedDuration: string;
   hasPhotoContext: boolean;
+  hasDocumentContext: boolean;
 }
 
 export interface DemoScenario {

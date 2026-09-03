@@ -3,9 +3,9 @@ import { ShieldCheck, HeartPulse, Sparkles } from 'lucide-react';
 
 const LOADING_MESSAGES = [
   'Checking urgent warning signs…',
+  'Reviewing the information you shared…',
   'Preparing guidance in your selected language…',
-  'Creating a safe next-step summary…',
-  'Finalizing safety validation checks…',
+  'Finalizing safe next-step recommendations…',
 ];
 
 export const AnalysisLoading: React.FC = () => {
@@ -14,7 +14,7 @@ export const AnalysisLoading: React.FC = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       setMessageIndex((prev) => (prev < LOADING_MESSAGES.length - 1 ? prev + 1 : prev));
-    }, 600);
+    }, 700);
 
     return () => clearInterval(interval);
   }, []);
@@ -29,8 +29,11 @@ export const AnalysisLoading: React.FC = () => {
         {/* Orbital Animation Container */}
         <div className="relative w-28 h-28 mx-auto flex items-center justify-center">
           {/* Outer ring */}
-          <div className="absolute inset-0 rounded-full border-2 border-dashed border-amrit-teal/40 animate-spin" style={{ animationDuration: '10s' }} />
-          
+          <div
+            className="absolute inset-0 rounded-full border-2 border-dashed border-amrit-teal/40 animate-spin"
+            style={{ animationDuration: '10s' }}
+          />
+
           {/* Inner pulsating glow */}
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amrit-teal to-amrit-blue flex items-center justify-center shadow-glow-teal animate-pulse">
             <ShieldCheck className="w-9 h-9 text-white" />
@@ -48,22 +51,25 @@ export const AnalysisLoading: React.FC = () => {
         <div className="space-y-2">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amrit-tealLight text-amrit-teal text-xs font-bold uppercase tracking-wider">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Evaluating Triage Safety</span>
+            <span>Non-Diagnostic Triage Assessment</span>
           </div>
 
-          <h3 className="text-xl font-bold text-amrit-navy transition-all duration-300 min-h-[28px]">
+          <h3 className="text-lg sm:text-xl font-bold text-amrit-navy transition-all duration-300 min-h-[32px]">
             {LOADING_MESSAGES[messageIndex]}
           </h3>
 
-          <p className="text-xs text-amrit-muted">
-            Analyzing symptom keywords, duration, and safety indicators...
+          <p className="text-xs text-amrit-muted font-medium">
+            Evaluating safety parameters, symptoms, and localized guidance...
           </p>
         </div>
 
-        {/* Prototype safety footnote */}
-        <div className="pt-4 border-t border-amrit-border">
-          <p className="text-[11px] font-semibold text-amrit-muted bg-amrit-bg py-2 px-3 rounded-lg border border-amrit-border">
-            Demo mode — backend analysis will be integrated later.
+        {/* Non-diagnostic safety footnote */}
+        <div className="pt-4 border-t border-amrit-border space-y-1.5">
+          <p className="text-xs font-bold text-amrit-navy">
+            Demo guidance — not a diagnosis.
+          </p>
+          <p className="text-[11px] text-amrit-muted">
+            All analysis is performed securely with strict clinical safety guardrails.
           </p>
         </div>
       </div>

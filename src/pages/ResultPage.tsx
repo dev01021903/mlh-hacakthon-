@@ -12,7 +12,9 @@ import {
   PhoneCall,
   AlertTriangle,
   Sparkles,
-  HelpCircle,
+  ImageIcon,
+  FileText,
+  AlertCircle as AlertIcon,
 } from 'lucide-react';
 import { SymptomFormData, TriageResult } from '../types';
 import { SafeMedicineGuide } from '../components/SafeMedicineGuide';
@@ -27,16 +29,33 @@ export const ResultPage: React.FC<ResultPageProps> = ({ result, formData }) => {
   const { showToast } = useToast();
   const [feedbackAnswered, setFeedbackAnswered] = useState<boolean>(false);
 
-  // Fallback if accessed directly without submitting form
+  // Fallback if accessed directly
   const activeResult: TriageResult = result || {
     urgency: 'self-care',
     headline: 'Self-care and monitor',
     summary:
       'Your symptoms may be suitable for gentle self-care and monitoring. Seek care if symptoms worsen or new warning signs appear.',
+    possibleConcerns: [
+      {
+        category: 'Mild seasonal discomfort concern',
+        uncertainty_note: 'Cannot be confirmed from this information alone.',
+      },
+    ],
+    imageContext: {
+      provided: false,
+      quality: 'not_provided',
+      observation: 'No image provided for visual review.',
+      limitation: 'Image context cannot replace physical clinical examination or provide a definitive diagnosis.',
+    },
+    documentContext: {
+      provided: false,
+      summary: 'No document provided.',
+      limitation: 'Document content is user-provided context only and is not clinically interpreted as a diagnosis.',
+    },
     medicineGuideEligible: true,
     carePathStep: 1,
     rationale:
-      'Amrit uses the information shared in this frontend demo, such as symptoms, duration, selected language, and optional image context, to show general next-step guidance. It cannot confirm the cause of a symptom.',
+      'Amrit uses the information shared in this triage session, such as symptoms, duration, selected language, and optional image/PDF context, to show general next-step guidance. It cannot confirm the cause of a symptom.',
     safeNextSteps: [
       'Get plenty of rest and stay hydrated with clean fluids.',
       'Keep track of your symptoms over the next 24 to 48 hours.',
@@ -51,10 +70,13 @@ export const ResultPage: React.FC<ResultPageProps> = ({ result, formData }) => {
       'Active seizures or convulsions',
       'Fainting, unresponsiveness, confusion, or unusual drowsiness',
     ],
-    evaluatedLanguage: 'en',
-    evaluatedAgeGroup: 'adult',
-    evaluatedDuration: 'today',
+    disclaimer:
+      'Amrit provides general triage guidance only. It does not diagnose conditions, prescribe medicines, or replace a qualified healthcare professional.',
+    evaluatedLanguage: 'English',
+    evaluatedAgeGroup: 'Adult',
+    evaluatedDuration: 'Started today',
     hasPhotoContext: false,
+    hasDocumentContext: false,
   };
 
   const isEmergency = activeResult.urgency === 'emergency';
@@ -93,7 +115,7 @@ export const ResultPage: React.FC<ResultPageProps> = ({ result, formData }) => {
   };
 
   const handleDownload = () => {
-    showToast('Demo guidance summary downloaded (simulated PDF export).', 'info');
+    showToast('Triage guidance summary downloaded (simulated PDF export).', 'info');
   };
 
   const handleShare = () => {
@@ -109,7 +131,7 @@ export const ResultPage: React.FC<ResultPageProps> = ({ result, formData }) => {
   const showMedicineGuide =
     isSelfCare &&
     activeResult.medicineGuideEligible &&
-    activeResult.evaluatedAgeGroup === 'adult';
+    activeResult.evaluatedAgeGroup.toLowerCase() === 'adult';
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-10">
@@ -218,7 +240,7 @@ export const ResultPage: React.FC<ResultPageProps> = ({ result, formData }) => {
           </div>
         </div>
 
-        {/* User Input Context (if submitted via form) */}
+        {/* User Input Context */}
         {formData && (
           <div className="bg-white/80 p-4 rounded-xl border border-current/20 text-xs space-y-1.5">
             <span className="font-bold text-amrit-navy uppercase text-[11px]">
@@ -237,6 +259,12 @@ export const ResultPage: React.FC<ResultPageProps> = ({ result, formData }) => {
                   <span className="text-amrit-teal font-bold">Photo attached</span>
                 </>
               )}
+              {formData.documentFileName && (
+                <>
+                  <span>•</span>
+                  <span className="text-amrit-blue font-bold">PDF attached</span>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -244,23 +272,79 @@ export const ResultPage: React.FC<ResultPageProps> = ({ result, formData }) => {
         {/* Reassurance Disclaimer */}
         <div className="text-center pt-2">
           <p className="text-xs text-amrit-muted font-semibold">
-            “Amrit does not diagnose medical conditions or prescribe medicines.”
+            “{activeResult.disclaimer}”
           </p>
         </div>
       </div>
 
-      {/* Section 1: Why this guidance? */}
-      <div className="bg-white rounded-card-lg border border-amrit-border p-6 sm:p-8 shadow-soft space-y-3">
-        <div className="flex items-center gap-2">
-          <HelpCircle className="w-5 h-5 text-amrit-teal" />
-          <h3 className="text-lg font-bold text-amrit-navy">Why this guidance?</h3>
+      {/* Section 1: Possible concerns to discuss with a clinician */}
+      {!isEmergency && activeResult.possibleConcerns.length > 0 && (
+        <div className="bg-white rounded-card-lg border border-amrit-border p-6 sm:p-8 shadow-soft space-y-4">
+          <div className="flex items-center gap-2">
+            <AlertIcon className="w-5 h-5 text-amrit-teal" />
+            <h3 className="text-lg font-bold text-amrit-navy">
+              Possible concerns to discuss with a clinician
+            </h3>
+          </div>
+          <p className="text-xs text-amrit-muted font-medium">
+            Broad topics to mention during a clinical appointment (not confirmed diagnoses):
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+            {activeResult.possibleConcerns.map((concern, idx) => (
+              <div
+                key={idx}
+                className="p-4 rounded-xl bg-amrit-bg border border-amrit-border space-y-2 hover:border-amrit-teal/40 transition-colors"
+              >
+                <div className="text-xs sm:text-sm font-bold text-amrit-navy">
+                  {concern.category}
+                </div>
+                <div className="text-[11px] text-amrit-muted italic font-medium">
+                  {concern.uncertainty_note}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <p className="text-xs sm:text-sm text-amrit-muted font-medium leading-relaxed">
-          {activeResult.rationale}
-        </p>
-      </div>
+      )}
 
-      {/* Section 2: Safe Next Steps */}
+      {/* Section 2: Multimodal Contexts (Image & Document) */}
+      {(activeResult.imageContext.provided || activeResult.documentContext.provided) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Image Context */}
+          {activeResult.imageContext.provided && (
+            <div className="bg-white rounded-card p-5 border border-amrit-border shadow-soft space-y-2">
+              <div className="flex items-center gap-2 text-amrit-teal font-bold text-sm">
+                <ImageIcon className="w-4 h-4" />
+                <span>Image context</span>
+              </div>
+              <p className="text-xs text-amrit-navy font-medium leading-relaxed">
+                {activeResult.imageContext.observation}
+              </p>
+              <div className="text-[11px] text-amrit-muted italic pt-1 border-t border-amrit-border/60">
+                <strong>Limitation:</strong> {activeResult.imageContext.limitation}
+              </div>
+            </div>
+          )}
+
+          {/* Document Context */}
+          {activeResult.documentContext.provided && (
+            <div className="bg-white rounded-card p-5 border border-amrit-border shadow-soft space-y-2">
+              <div className="flex items-center gap-2 text-amrit-blue font-bold text-sm">
+                <FileText className="w-4 h-4" />
+                <span>Document context</span>
+              </div>
+              <p className="text-xs text-amrit-navy font-medium leading-relaxed">
+                {activeResult.documentContext.summary}
+              </p>
+              <div className="text-[11px] text-amrit-muted italic pt-1 border-t border-amrit-border/60">
+                <strong>Limitation:</strong> {activeResult.documentContext.limitation}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Section 3: Safe Next Steps */}
       <div className="bg-white rounded-card-lg border border-amrit-border p-6 sm:p-8 shadow-soft space-y-4">
         <div className="flex items-center gap-2">
           <Sparkles className="w-5 h-5 text-amrit-teal" />
@@ -278,7 +362,7 @@ export const ResultPage: React.FC<ResultPageProps> = ({ result, formData }) => {
         </ul>
       </div>
 
-      {/* Section 3: Red Flags (Emergency Alert Card) */}
+      {/* Section 4: Red Flags (Emergency Alert Card) */}
       <div className="bg-rose-50 border-2 border-amrit-emergency/40 rounded-card-lg p-6 sm:p-8 space-y-4">
         <div className="flex items-center gap-2.5 text-amrit-emergency">
           <AlertTriangle className="w-6 h-6 flex-shrink-0" />
@@ -299,10 +383,10 @@ export const ResultPage: React.FC<ResultPageProps> = ({ result, formData }) => {
         </div>
       </div>
 
-      {/* Section 4: Safe Medicine Guide (Conditional: ONLY for Adult Self-Care) */}
+      {/* Section 5: Safe Medicine Guide (Conditional: ONLY for Adult Self-Care) */}
       {showMedicineGuide && <SafeMedicineGuide />}
 
-      {/* Section 5: Feedback */}
+      {/* Section 6: Feedback */}
       <div className="bg-white rounded-card p-6 border border-amrit-border shadow-soft flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>
           <h4 className="text-sm font-bold text-amrit-navy">
