@@ -47,7 +47,12 @@ def sanitize_and_validate_gemini_output(
         urgency=UrgencyEnum.CONSULT_SOON,
         headline="Consult a doctor soon",
         summary="We could not safely interpret all of the information. A qualified healthcare professional can help assess your symptoms.",
-        possible_concerns=[],
+        possible_concerns=[
+            PossibleConcern(
+                category="General symptom evaluation concern",
+                uncertainty_note="Cannot be confirmed from this information alone.",
+            )
+        ],
         image_context=ImageContext(
             provided=has_image,
             quality="limited" if has_image else "not_provided",
@@ -96,7 +101,6 @@ def sanitize_and_validate_gemini_output(
                 if isinstance(item, dict):
                     category_str = sanitize_text(str(item.get("category", "")).strip())
                     if category_str and len(category_str) < 100:
-                        # Ensure category reads as a broad concern, not a confirmed disease
                         if not category_str.lower().endswith("concern") and not category_str.lower().endswith("discomfort"):
                             category_str = f"{category_str} concern"
                         possible_concerns.append(
@@ -115,6 +119,14 @@ def sanitize_and_validate_gemini_output(
                             uncertainty_note="Cannot be confirmed from this information alone.",
                         )
                     )
+
+        if not possible_concerns and urgency != UrgencyEnum.EMERGENCY_NOW:
+            possible_concerns = [
+                PossibleConcern(
+                    category="General symptom evaluation concern",
+                    uncertainty_note="Cannot be confirmed from this information alone.",
+                )
+            ]
 
         # 4. Validate Image Context
         img_raw = raw_data.get("image_context", {})
@@ -148,14 +160,13 @@ def sanitize_and_validate_gemini_output(
                 limitation="Document content is user-provided context only and is not clinically interpreted as a diagnosis.",
             )
 
-        # 6. Validate Safe Next Steps (Sanitize medicine/prescriptions)
+        # 6. Validate Safe Next Steps
         raw_steps = raw_data.get("safe_next_steps", [])
         safe_steps: List[str] = []
         if isinstance(raw_steps, list):
             for step in raw_steps:
                 if isinstance(step, str) and step.strip():
                     s = sanitize_text(step.strip())
-                    # Check if step contains forbidden prescription / dosage strings
                     has_forbidden = any(pat.search(s) for pat in FORBIDDEN_MEDICINE_PATTERNS)
                     if has_forbidden:
                         s = "Discuss any relief options or medications with a qualified pharmacist or doctor."
@@ -165,7 +176,7 @@ def sanitize_and_validate_gemini_output(
             safe_steps = [
                 "Rest and monitor symptoms closely over the next 24 to 48 hours.",
                 "Consult a healthcare professional if symptoms worsen or fail to improve.",
-                "Seek immediate emergency care (112 / 108) if red flags develop.",
+                "Seek immediate emergency care (112 / 108) if red flags like breathing difficulty develop.",
             ]
 
         # 7. Red Flags
@@ -174,7 +185,7 @@ def sanitize_and_validate_gemini_output(
         if not red_flags:
             red_flags = GENERAL_RED_FLAGS
 
-        # 8. Medicine Guide Eligibility (Only for SELF_CARE & non-emergency)
+        # 8. Medicine Guide Eligibility
         medicine_guide_eligible = (
             urgency == UrgencyEnum.SELF_CARE and
             age_group.lower() == "adult" and

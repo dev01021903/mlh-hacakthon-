@@ -1,3 +1,4 @@
+import re
 from typing import List
 from models.schemas import (
     UrgencyEnum,
@@ -71,13 +72,41 @@ LOCALIZED_EMERGENCY_HEADLINES = {
     "ta": "அவசர சிகிச்சை - உடனடியாக 112/108 ஐ அழைக்கவும்",
 }
 
+NEGATION_PATTERNS = [
+    r"\bno\s+",
+    r"\bnot\s+",
+    r"\bwithout\s+",
+    r"\bdo\s+not\s+have\s+",
+    r"\bdon'?t\s+have\s+",
+    r"\bno\s+sign\s+of\s+",
+    r"\bdenies\s+",
+    r"\bdenying\s+",
+    r"\bnever\s+",
+]
+
 def check_emergency_red_flags(symptom_text: str, symptom_tags: List[str] = []) -> bool:
     """
     Deterministic red-flag check before any Gemini API call.
-    Returns True if an immediate emergency red-flag keyword is present.
+    Returns True if an active positive emergency red-flag keyword is present.
+    Ignores negated phrases (e.g. 'no breathing difficulty', 'do not have chest pain').
     """
-    combined = (symptom_text + " " + " ".join(symptom_tags)).lower()
-    return any(keyword in combined for keyword in RED_FLAG_KEYWORDS)
+    clean_text = symptom_text.lower()
+    
+    # 1. Check symptom tags
+    for tag in symptom_tags:
+        tag_lower = tag.lower()
+        if any(keyword in tag_lower for keyword in ["breathing concern", "chest pain", "unconscious", "seizure", "swelling"]):
+            return True
+
+    # 2. Check symptom text with negation awareness
+    for keyword in RED_FLAG_KEYWORDS:
+        if keyword in clean_text:
+            pattern = re.compile(rf"(?:{'|'.join(NEGATION_PATTERNS)})[a-z0-9\s,]*{re.escape(keyword)}", re.IGNORECASE)
+            if pattern.search(clean_text):
+                continue
+            return True
+
+    return False
 
 def get_emergency_response(
     language: str = "English",
@@ -120,7 +149,7 @@ def get_emergency_response(
             limitation="Emergency red flags supersede static document review.",
         ),
         safe_next_steps=safe_next_steps,
-        redFlags=GENERAL_RED_FLAGS,
+        red_flags=GENERAL_RED_FLAGS,
         medicine_guide_eligible=False,
         disclaimer="Amrit provides general triage guidance only. It does not diagnose conditions, prescribe medicines, or replace a qualified healthcare professional.",
         evaluated_language=language,
